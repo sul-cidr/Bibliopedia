@@ -1,7 +1,9 @@
 <?php
 
 /**
+ * @file
  * Contains CSV Parser.
+ *
  * Functions in this file are independent of the Feeds specific implementation.
  * Thanks to jpetso http://drupal.org/user/56020 for most of the code in this
  * file.
@@ -81,6 +83,7 @@ class ParserCSV {
     $this->startByte = 0;
     $this->lineLimit = 0;
     $this->lastLinePos = 0;
+    ini_set('auto_detect_line_endings', TRUE);
   }
 
   /**
@@ -155,7 +158,7 @@ class ParserCSV {
    *  reached the timeout set with setTimeout() or the line limit set with
    *  setLineLimit().
    *
-   * @see ParserCSV::setStartByte($start);
+   * @see ParserCSV::setStartByte()
    */
   public function lastLinePos() {
     return $this->lastLinePos;

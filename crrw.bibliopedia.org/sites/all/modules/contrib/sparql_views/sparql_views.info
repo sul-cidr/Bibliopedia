@@ -11,6 +11,7 @@ files[] = sparql_views.admin.inc
 files[] = sparql_views.views.inc
 files[] = includes/sparql_views.controller.inc
 files[] = handlers/sparql_views_handler_argument.inc
+files[] = handlers/sparql_views_handler_argument_subject.inc
 files[] = handlers/sparql_views_handler_field.inc
 files[] = handlers/sparql_views_handler_field_rdftype.inc
 files[] = handlers/sparql_views_handler_field_subject.inc
@@ -21,15 +22,17 @@ files[] = handlers/sparql_views_handler_filter_field_value.inc
 files[] = handlers/sparql_views_handler_filter_language.inc
 files[] = handlers/sparql_views_handler_filter_rdftype.inc
 files[] = plugins/sparql_views_plugin_query_sparql.inc
+files[] = plugins/sparql_views_plugin_pager_full.inc
+files[] = plugins/sparql_views_plugin_pager_mini.inc
 files[] = plugins/sparql_views_plugin_argument_default_field.inc
 files[] = tests/sparql_views.test
 files[] = tests/sparql_views_query.test
 files[] = tests/sparql_views_basic.test
 files[] = tests/sparql_views_formatter.test
 
-; Information added by drupal.org packaging script on 2011-08-09
-version = "7.x-2.0-beta1"
+; Information added by drupal.org packaging script on 2013-10-01
+version = "7.x-2.0-beta1+11-dev"
 core = "7.x"
 project = "sparql_views"
-datestamp = "1312904520"
+datestamp = "1380637258"
 

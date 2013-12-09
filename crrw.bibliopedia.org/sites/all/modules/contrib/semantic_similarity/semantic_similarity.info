@@ -1,0 +1,20 @@
+﻿; $Id: semantic_similarity.info,v 1.5 2011/02/04 00:21:26 benoitborrel Exp $
+name = Semantic Similarity
+description = Automatically computes semantic similarity scores between nodes.
+core = 7.x
+dependencies[] = raphael
+dependencies[] = views
+files[] = semantic_similarity.module
+files[] = semantic_similarity.crud.inc
+files[] = semantic_similarity.admin.inc
+files[] = semantic_similarity.theme.inc
+files[] = views/semantic_similarity.views.inc
+files[] = views/semantic_similarity.views_default.inc
+configure = admin/config/semantic_similarity
+
+; Information added by drupal.org packaging script on January 1, 1970 - 00:00
+version = "7.x-1.0-alpha1"
+core = "7.x"
+project = "semantic_similarity"
+datestamp = "1296780865"
+

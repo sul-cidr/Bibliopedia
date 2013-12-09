@@ -6,10 +6,9 @@
  */
 
 class LinkAttributeCrudTest extends DrupalWebTestCase {
-
   private $zebra;
 
-  public $permissions = array(
+  protected $permissions = array(
     'access content',
     'administer content types',
     'administer nodes',
@@ -29,14 +28,14 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
   }
 
   function setup() {
+    parent::setup('field_ui', 'link');
     $this->zebra = 0;
-    parent::setup('field_ui', 'link'); // was 'views'
     // Create and login user.
-    $account = $this->drupalCreateUser(array('administer content types'));
-    $this->drupalLogin($account);
+    $this->web_user = $this->drupalCreateUser(array('administer content types'));
+    $this->drupalLogin($this->web_user);
   }
 
-  function createLink($url, $title, $attributes = array()) {
+  protected function createLink($url, $title, $attributes = array()) {
     return array(
       'url' => $url,
       'title' => $title,
@@ -44,7 +43,7 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     );
   }
 
-  private function assertLinkOnNode($field_name, $link_value, $message = '', $group = 'Other') {
+  protected function assertLinkOnNode($field_name, $link_value, $message = '', $group = 'Other') {
     $this->zebra++;
     $zebra_string = ($this->zebra % 2 == 0) ? 'even' : 'odd';
     $cssFieldLocator = 'field-'. str_replace('_', '-', $field_name);
@@ -109,8 +108,8 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     // Now that we have a new content type, create a user that has privileges
     // on the content type.
     $permissions = array_merge($this->permissions, array($permission));
-    $account = $this->drupalCreateUser($permissions);
-    $this->drupalLogin($account);
+    $this->web_user = $this->drupalCreateUser($permissions);
+    $this->drupalLogin($this->web_user);
 
     // Go to page.
     $this->drupalGet('node/add/'. $content_type_machine);
@@ -127,7 +126,7 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
 
     $this->drupalGet('node/add/'. $content_type_machine);
 
-    // lets add a node:
+    // Create a node:
     $edit = array(
       'title' => $title,
       'field_' . $single_field_name_machine . '[und][0][url]' => 'http://www.example.com/',
@@ -142,21 +141,8 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $this->assertLinkByHref('http://www.example.com');
   }
 
-  private function createNodeType($content_type_machine, $content_type_friendly) {
-    $this->drupalGet('admin/structure/types');
-
-    // Create the content type.
-    $this->clickLink(t('Add content type'));
-
-    $edit = array (
-      'name' => $content_type_friendly,
-      'type' => $content_type_machine,
-    );
-    $this->drupalPost(NULL, $edit, t('Save and add fields'));
-    $this->assertText(t('The content type @name has been added.', array('@name' => $content_type_friendly)));
-  }
-
-  private function createSimpleLinkField($single_field_name_machine, $single_field_name_friendly, $content_type_machine) {
+  protected function createSimpleLinkField($single_field_name_machine, $single_field_name_friendly, $content_type_machine) {
+    $this->drupalGet('admin/structure/types/manage/' . $content_type_machine . '/fields');
     $edit = array (
       'fields[_add_new_field][label]' => $single_field_name_friendly,
       'fields[_add_new_field][field_name]' => $single_field_name_machine,
@@ -180,7 +166,7 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $this->assertTrue($type_exists, 'The new content type has been created in the database.');
   }
 
-  function createNodeTypeUser($content_type_machine) {
+  protected function createNodeTypeUser($content_type_machine) {
     $permission = 'create ' . $content_type_machine . ' content';
     $permission_edit = 'edit ' . $content_type_machine . ' content';
     // Reset the permissions cache.
@@ -189,12 +175,11 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     // Now that we have a new content type, create a user that has privileges
     // on the content type.
     $permissions = array_merge($this->permissions, array($permission));
-    $account = $this->drupalCreateUser($permissions);
-    $this->drupalLogin($account);
+    $this->web_user = $this->drupalCreateUser($permissions);
+    $this->drupalLogin($this->web_user);
   }
 
-  function createNodeForTesting($content_type_machine, $content_type_friendly, $single_field_name_machine, $title, $url, $node_title = '') {
-    // Go to page.
+  protected function createNodeForTesting($content_type_machine, $content_type_friendly, $single_field_name_machine, $title, $url, $node_title = '') {
     $this->drupalGet('node/add/'. $content_type_machine);
 
     if (!$node_title) {
@@ -222,7 +207,10 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $content_type_friendly = $this->randomName(20);
     $content_type_machine = strtolower($this->randomName(10));
 
-    $this->createNodeType($content_type_machine, $content_type_friendly);
+    $this->drupalCreateContentType(array(
+      'type' => $content_type_machine,
+      'name' => $content_type_friendly,
+    ));
 
     // Now add a singleton field.
     $single_field_name_friendly = $this->randomName(20);
@@ -270,7 +258,10 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $content_type_friendly = $this->randomName(20);
     $content_type_machine = strtolower($this->randomName(10));
 
-    $this->createNodeType($content_type_machine, $content_type_friendly);
+    $this->drupalCreateContentType(array(
+      'type' => $content_type_machine,
+      'name' => $content_type_friendly,
+    ));
 
     // Now add a singleton field.
     $single_field_name_friendly = $this->randomName(20);
@@ -317,7 +308,10 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $content_type_friendly = $this->randomName(20);
     $content_type_machine = strtolower($this->randomName(10));
 
-    $this->createNodeType($content_type_machine, $content_type_friendly);
+    $this->drupalCreateContentType(array(
+      'type' => $content_type_machine,
+      'name' => $content_type_friendly,
+    ));
 
     // Now add a singleton field.
     $single_field_name_friendly = $this->randomName(20);
@@ -365,7 +359,10 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $content_type_friendly = $this->randomName(20);
     $content_type_machine = strtolower($this->randomName(10));
 
-    $this->createNodeType($content_type_machine, $content_type_friendly);
+    $this->drupalCreateContentType(array(
+      'type' => $content_type_machine,
+      'name' => $content_type_friendly,
+    ));
 
     // Now add a singleton field.
     $single_field_name_friendly = $this->randomName(20);
@@ -413,7 +410,10 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $content_type_friendly = $this->randomName(20);
     $content_type_machine = strtolower($this->randomName(10));
 
-    $this->createNodeType($content_type_machine, $content_type_friendly);
+    $this->drupalCreateContentType(array(
+      'type' => $content_type_machine,
+      'name' => $content_type_friendly,
+    ));
 
     // Now add a singleton field.
     $single_field_name_friendly = $this->randomName(20);
@@ -462,7 +462,10 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $content_type_friendly = $this->randomName(20);
     $content_type_machine = strtolower($this->randomName(10));
     
-    $this->createNodeType($content_type_machine, $content_type_friendly);
+    $this->drupalCreateContentType(array(
+      'type' => $content_type_machine,
+      'name' => $content_type_friendly,
+    ));
     
     // Now add a singleton field.
     $single_field_name_friendly = $this->randomName(20);
@@ -488,45 +491,4 @@ class LinkAttributeCrudTest extends DrupalWebTestCase {
     $this->assertNoText($link_url);
     $this->assertNoLinkByHref($link_url);
   }
-
-  /**
-   * This test sees that we can create a link field with a defined class, and make sure
-   * that class displays properly when the link is displayed.
-   */
-  /*function testLinkWithClassOnField() {
-    $this->acquireContentTypes(1);
-    $field_settings = array(
-      'type' => 'link',
-      'widget_type' => 'link',
-      'type_name' => $this->content_types[0]->name,
-      'attributes' => array(
-        'class' => 'test-class',
-        'target' => 'default',
-        'rel' => FALSE,
-      ),
-    );
-
-    $field = $this->createField($field_settings, 0);
-    //$this->pass('<pre>'. print_r($field, TRUE) .'</pre>');
-    $field_db_info = content_database_info($field);
-
-    $this->acquireNodes(2);
-
-    $node = node_load($this->nodes[0]->nid);
-    $node->promote = 1; // We want this to show on front page for the teaser test.
-    $node->{$field['field_name']}[0] = $this->createLink('http://www.example.com', 'Test Link');
-    node_save($node);
-
-    // Does this display on the node page?
-    $this->drupalGet('node/'. $this->nodes[0]->nid);
-    //$this->outputScreenContents('Link field with class', 'link_');
-    $this->assertLinkOnNode($field['field_name'], l('Test Link', 'http://www.example.com', array('attributes' => array('class' => 'test-class'))));
-
-    // Does this display on the front page?
-    $this->drupalGet('<front>');
-    // reset the zebra!
-    $this->zebra = 0;
-    $this->assertLinkOnNode($field['field_name'], l('Test Link', 'http://www.example.com', array('attributes' => array('class' => 'test-class'))));
-  }*/
-
 }

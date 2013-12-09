@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the CRRW Content Types and Views feature.
+ */
+
+include_once 'crrw_content_types_and_views.features.inc';

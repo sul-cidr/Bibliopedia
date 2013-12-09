@@ -31,6 +31,12 @@ class sparql_views_handler_filter_field_value extends sparql_views_handler_filte
         'method' => 'op_equal',
         'values' => 1,
       ),
+      'contains' => array(
+        'title' => t('Contains'),
+        'short' => t('contains'),
+        'method' => 'op_contains',
+        'values' => 1,
+      ),
     );
     return $operators;
   }
@@ -90,6 +96,31 @@ class sparql_views_handler_filter_field_value extends sparql_views_handler_filte
       );
     }
     // Attach the SPARQL specific form elements.
-    $form = _sparql_views_attach_form_elements($form, $this->options, $this->selected_sparql_options);
+    if (empty($form_state['exposed'])) {
+      $form = _sparql_views_attach_form_elements($form, $this->options, $this->selected_sparql_options);
+    }
+  }
+
+  /**
+   * Operator; Uses SPARQL's FILTER with a regex().
+   */
+  function op_contains() {
+    $value_type = $this->options['sparql_options']['value_type'];
+    $language = $this->options['sparql_options']['language'];
+
+    $object = '?var' . rand();
+    $value = $this->query->format_replacement($this->value, $value_type, $language);
+    $this->query->add_filter('regex', array($object, $value));
+
+    $relationship = $this->options['relationship'];
+
+    if ($relationship == 'none') {
+      $subject = $this->definition['subject'];
+    }
+    else {
+      $subject = $relationship;
+    }
+    $predicate = $this->definition['rdf_mapping'][0];
+    $this->query->add_triple($subject, $predicate, $object);
   }
 }

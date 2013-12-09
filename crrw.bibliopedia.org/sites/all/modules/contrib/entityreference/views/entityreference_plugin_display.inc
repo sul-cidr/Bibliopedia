@@ -57,8 +57,8 @@ class entityreference_plugin_display extends views_plugin_display {
     // Make sure the id field is included in the results, and save its alias
     // so that references_plugin_style can retrieve it.
     $this->id_field_alias = $id_field = $this->view->query->add_field($this->view->base_table, $this->view->base_field);
-    if (strpos($id_field, '.') === false) {
-      $id_field = $this->view->base_table .'.'.$this->id_field_alias;
+    if (strpos($id_field, '.') === FALSE) {
+      $id_field = $this->view->base_table . '.' . $this->id_field_alias;
     }
 
     // Restrict the autocomplete options based on what's been typed already.
@@ -75,8 +75,15 @@ class entityreference_plugin_display extends views_plugin_display {
       // Build the condition using the selected search fields
       foreach ($style_options['search_fields'] as $field_alias) {
         if (!empty($field_alias)) {
-          // Get the table and field names for the checked field
-          $field = $this->view->query->fields[$this->view->field[$field_alias]->field_alias];
+
+          // Get the table and field names for the checked field.
+          if (empty($this->view->field[$field_alias]->field_info)) {
+            $field = $this->view->query->fields[$this->view->field[$field_alias]->field_alias];
+          }
+          else {
+            $this->view->query->add_field($this->view->field[$field_alias]->options['table'], $this->view->field[$field_alias]->real_field, $this->view->field[$field_alias]->options['field'], array());
+            $field = $this->view->query->fields[$this->view->field[$field_alias]->options['field']];
+          }
           // Add an OR condition for the field
           $conditions->condition($field['table'] . '.' . $field['field'], $value, 'LIKE');
         }
@@ -94,7 +101,7 @@ class entityreference_plugin_display extends views_plugin_display {
   }
 
   /**
-   * Extend the default validation. 
+   * Extend the default validation.
    */
   function validate() {
     $errors = parent::validate();

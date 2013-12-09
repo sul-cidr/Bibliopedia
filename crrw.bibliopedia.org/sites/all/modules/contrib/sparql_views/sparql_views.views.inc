@@ -66,7 +66,8 @@ function sparql_views_views_data_alter(&$data) {
           'group' => t($group),
           'base' => $endpoint->table_id,
           'base field' => $bundle_type,
-          'handler' => 'sparql_views_handler_argument',
+          'handler' => 'sparql_views_handler_argument_subject',
+          'subject' => $bundle_type,
           'label' => t($bundle_type),
         ),
       );
@@ -105,6 +106,7 @@ function sparql_views_views_data_alter(&$data) {
           'handler' => 'sparql_views_handler_argument',
           'label' => t($bundle_type),
           'rdf_type' => isset($rdf_mapping['rdftype']) ? $rdf_mapping['rdftype'] : NULL,
+          'rdf_mapping' => array('rdf:type'),
           'subject' => $bundle_type,
         ),
       );
@@ -210,6 +212,17 @@ function sparql_views_views_plugins() {
       ),
     ),
   );
+}
+
+/**
+ * Implements hook_views_plugins_alter().
+ */
+function sparql_views_views_plugins_alter(&$plugins) {
+  foreach (array('full', 'mini') as $key) {
+    $plugins['pager'][$key]['handler'] = "sparql_views_plugin_pager_$key";
+    $plugins['pager'][$key]['path'] = drupal_get_path('module', 'sparql_views');
+    $plugins['pager'][$key]['file'] = "sparql_views_plugin_pager_$key.inc";
+  }
 }
 
 /*

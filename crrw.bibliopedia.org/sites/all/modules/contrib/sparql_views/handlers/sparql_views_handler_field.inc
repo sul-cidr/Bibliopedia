@@ -134,16 +134,10 @@ class sparql_views_handler_field extends views_handler_field {
    * Called to add the field to a query.
    */
   function query() {
-    $object = $this->real_field;
-    $relationship = $this->options['relationship'];
-    $optional = empty($this->options['required']);
-    if ($relationship == 'none') {
-      $subject = $this->definition['subject'];
-    }
-    else {
-      $subject = $relationship;
-    }
+    $subject = $this->get_subject();
     $predicate = $this->definition['rdf_mapping'][0];
+    $object = $this->real_field;
+    $optional = empty($this->options['required']);
     $this->field_alias = $this->query->add_triple($subject, $predicate, '?' . $object, array('#select' => TRUE, '#optional' => $optional));
   }
 
@@ -208,7 +202,7 @@ class sparql_views_handler_field extends views_handler_field {
     $output = '';
     if (is_array($values)) {
       $items = array();
-      foreach ($values[$this->real_field] as $value) {
+      foreach ($values[$this->field_alias] as $value) {
         $val = (object) array($this->field_alias => $value);
         $items[] = $this->render_value($val);
       }
@@ -266,5 +260,16 @@ class sparql_views_handler_field extends views_handler_field {
     }
     $output = theme('image', $item);
     return filter_xss($output, array('img', 'a'));
+  }
+
+  protected function get_subject() {
+    $relationship = $this->options['relationship'];
+    if ($relationship == 'none') {
+      $subject = $this->definition['subject'];
+    }
+    else {
+      $subject = $relationship;
+    }
+    return $subject;
   }
 }

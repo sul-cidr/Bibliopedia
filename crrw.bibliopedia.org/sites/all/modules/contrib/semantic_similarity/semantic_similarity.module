@@ -1,0 +1,429 @@
+﻿<?php
+// $Id: semantic_similarity.module,v 1.9 2011/02/04 00:21:26 benoitborrel Exp $
+
+/**
+ * @file
+ * Semantic Similarity module main file.
+ */
+
+module_load_include('inc', 'semantic_similarity', 'semantic_similarity.crud');
+
+/*
+ * The path to the main directory within default 'files' directory.
+ */
+define('SEMANTIC_SIMILARITY_PATH',                    variable_get('file_public_path', conf_path() . '/files') . '/semantic_similarity');
+
+/*
+ * The path to the 'corpus' directory.
+ */
+define('SEMANTIC_SIMILARITY_CORPUS_PATH',             variable_get('file_public_path', conf_path() . '/files') . '/semantic_similarity/corpus');
+
+/*
+ * Denotes the default value of the 'stopwords' variable.
+ * Means stopwords will be active when calling R/lsa:textmatrix().
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_STOPWORDS',       1);
+
+/*
+ * Denotes the default value of the 'stemming' variable.
+ * Means stemming will be active when calling R/lsa:textmatrix().
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_STEMMING',        1);
+
+/*
+ * Denotes the deafult value of the 'weighting' variable.
+ * Means weighting will be active when calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_WEIGHTING',       1);
+
+/*
+ * Denotes the default value of the 'weighting scope' variable.
+ * Means weighting scope defaults to local when calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_WEIGHTING_SCOPE', 'lw');
+
+/*
+ * Denotes the default value of the 'local weighting scheme' variable.
+ * Means local weighting scheme defaults to logarithmic when calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_LW_SCHEME',       'lw_logtf');
+
+/*
+ * Denotes the default value of the 'global weighting scheme' variable.
+ * Means global weighting scheme defaults to inverse document frequency when
+ * calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_GW_SCHEME',       'gw_idf');
+
+/*
+ * Denotes the default value of the 'lsa' variable.
+ * Means lsa will be active when calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_LSA',             1);
+
+/*
+ * Denotes the default value of the 'dimension calculation' (aka singular value
+ * decomposition) variable.
+ * Means singular value decomposition defaults to share when calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_LSA_DIMCALC',     'share');
+
+/*
+ * Denotes the default value of the 'correlation' variable.
+ * Means correlation method defaults to cosine when calling R/lsa.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_CORRELATION',     'cosine');
+
+/*
+ * Denotes the default value of the 'limit' variable.
+ * Means the number of items displayed in the module node page block.
+ */
+define('SEMANTIC_SIMILARITY_DEFAULT_LIMIT',           5);
+
+/**
+ * Implements hook_help().
+ */
+function semantic_similarity_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#semantic_similarity':
+      $output =
+        '<p>' . t('The Semantic Similarity module automatically computes the semantic similarity scores between each node, which helps to detect duplicate (high scores) or complementary (medium scores) content.') . '</p>'
+        . '<p>' . t('It:')
+          . '<ul>'
+            . '<li>' . t('computes scores at cron time') . '</li>'
+            . '<li>' . t("provides blocks [1] on node page to display a node's most/least semantically similar nodes") . '</li>'
+            . '<li>' . t('provides a page [2] that list most/least semantically similar nodes') . '</li>'
+            . '<li>' . t('integrates with Views') . '</li>'
+            . '<li>' . t('supports English only') . '</li>'
+          . '</ul>'
+        . '</p>'
+        . '<p>' . t('For more details, see README.txt and INSTALL.txt.') . '</p>'
+        . '<p>'
+          . t('To enable the <em>semantic similarity</em> view, go to the <a href="@views">Views list page</a>.',
+            array('@views' => url('admin/build/views')))
+          . '<br />'
+          . t('To setup the blocks region and visibility, go to the <a href="@blocks">Blocks administration page</a>.',
+            array('@blocks' => url('admin/build/block')))
+        . '</p>'
+        . '<h3>' . t('Notes') . '</h3>'
+        . '<ol>'
+          . '<li>' . t('Both provided by the module default view or the module custom block.') . ' ' . t('The later having a nice radial map.') . '</li>'
+          . '<li>' . t('Provided by the module default view.') . '</li>'
+        . '</ol>';
+      return $output;
+
+    default: break;
+  }
+}
+
+/**
+ * Implements hook_perm().
+ */
+function semantic_similarity_permission() {
+  return array(
+    'administer semantic similarity' => array(
+      'title' => t('Administer semantic similarity'),
+      'description' => t('Set computation parameters of semantic similarity scores between nodes.'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function semantic_similarity_menu() {
+  $items = array(
+    'admin/config/semantic_similarity' => array(
+      'title'            => 'Semantic similarity',
+      'description'      => 'Settings for semantic similarity scores computing.',
+      'page callback'    => 'drupal_get_form',
+      'page arguments'   => array('semantic_similarity_admin_settings'),
+      'access arguments' => array('administer semantic similarity'),
+      'type'             => MENU_NORMAL_ITEM,
+      'file'             => 'semantic_similarity.admin.inc',
+    ),
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_node_delete().
+ * Deletes node's export file from corpus and node's scores from database.
+ */
+function semantic_similarity_node_delete($node) {
+  if ($node->nid) {
+    // Delete node's export file from corpus
+    file_unmanaged_delete(SEMANTIC_SIMILARITY_CORPUS_PATH . '/' . $node->nid);
+
+    // Delete node's scores with other nodes from database.
+    _semantic_similarity_delete_scores($node->nid);
+  }
+}
+
+/**
+ * Implements hook_cron().
+ * Bulkly compute published nodes missing semantic similarity scores.
+ */
+function semantic_similarity_cron() {
+  //@todo: run only if nb of nodes >= 2
+
+  // Get list of nids changed since last cron + those for nodes missing some scores
+  if ($nids = _semantic_similarity_get_nids_changed_since_last_cron() + _semantic_similarity_get_nids_missing_scores()) {
+    // If corpus is incomplete, i.e. some nodes were not exported into the
+    // filesystem because this is the module first run or for any other reasons,
+    // then complete the corpus.
+    _semantic_similarity_export_nodes_to_filesystem();
+
+    // Dumbly compute and save similarity scores for all nodes
+    $scores = _semantic_similarity_compute_scores();
+    if ($scores) _semantic_similarity_save_scores($scores);
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function semantic_similarity_block_info() {
+  $blocks = array();
+
+  $blocks['sem_sim_most_sim_nodes'] = array(
+    'info'       => t('Most semantically similar nodes'),
+  );
+  $blocks['sem_sim_least_sim_nodes'] = array(
+    'info'       => t('Least semantically similar nodes'),
+  );
+  $blocks['sem_sim_node_most_sim_nodes'] = array(
+    'info'       => t("Node's most semantically similar nodes"),
+    'visibility' => BLOCK_VISIBILITY_LISTED,
+    'pages'      => 'node/*',
+  );
+  $blocks['sem_sim_node_least_sim_nodes'] = array(
+    'info'       => t("Node's least semantically similar nodes"),
+    'visibility' => BLOCK_VISIBILITY_LISTED,
+    'pages'      => 'node/*',
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function semantic_similarity_block_view($delta = '') {
+  $block = array();
+
+  //$order = ($delta % 2 === 0) ? 'DESC' : 'ASC';
+  $order = strpos($delta, 'most') ? 'DESC' : 'ASC';
+
+  switch ($delta) {
+    case 'sem_sim_most_sim_nodes':
+    case 'sem_sim_least_sim_nodes':
+      $adverb = strpos($delta, 'most') ? t('Most') : t('Least');
+      $block['subject'] = t('@adverb semantically similar nodes', array('@adverb' => $adverb));
+      $block['content'] = theme('semantic_similarity_block',
+        array(
+          'order' => $order,
+          'limit' => variable_get('semantic_similarity_limit', SEMANTIC_SIMILARITY_DEFAULT_LIMIT)
+        )
+      );
+    break;
+
+    case 'sem_sim_node_most_sim_nodes':
+    case 'sem_sim_node_least_sim_nodes':
+      if (arg(0) === 'node' && is_numeric(arg(1))) {
+        $node   = node_load(arg(1));
+        $adverb = strpos($delta, 'most') ? t('most') : t('least');
+        $block['subject'] = t("Node's @adverb semantically similar nodes", array('@adverb' => $adverb));
+        $block['content'] = theme('semantic_similarity_node_block',
+          array(
+            'nid'   => $node->nid,
+            'order' => $order,
+            'limit' => variable_get('semantic_similarity_limit', SEMANTIC_SIMILARITY_DEFAULT_LIMIT)
+          )
+        );
+      }
+    break;
+
+    default: break;
+  }
+
+  return $block;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function semantic_similarity_theme($existing, $type, $theme, $path) {
+  return array(
+    'semantic_similarity_block' => array(
+      'variables' => array(
+        'order' => NULL,
+        'limit' => NULL
+      ),
+      'file' => 'semantic_similarity.theme.inc',
+    ),
+    'semantic_similarity_node_block' => array(
+      'variables' => array(
+        'nid' => NULL,
+        'order' => NULL,
+        'limit' => NULL
+      ),
+      'file' => 'semantic_similarity.theme.inc',
+    ),
+  );
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function semantic_similarity_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'semantic_similarity') . '/views',
+  );
+}
+
+/********************
+ * HELPER FUNCTIONS *
+ ********************/
+
+/**
+ * Exports all published nodes title and body into the filesystem as text files.
+ */
+function _semantic_similarity_export_nodes_to_filesystem() {
+  if ($nids = _semantic_similarity_get_nids_not_exported()) {
+    foreach ($nids as $nid) {
+      $node = node_load($nid);
+      // Export node title+body into corpus
+      _semantic_similarity_export_node_to_filesystem($node);
+    }
+  }
+}
+
+/**
+ * Exports node title and body into the filesystem as a text file.
+ *
+ * @param object $node
+ *   The node to export into the filesystem.
+ */
+function _semantic_similarity_export_node_to_filesystem(&$node) {
+  $filedata = $node->title . "\n\n" . _semantic_similarity_html2text($node->body['und'][0]['value']) . "\n";
+  $filename = $node->nid;
+  $filepath = SEMANTIC_SIMILARITY_CORPUS_PATH;
+
+  // Save node to filesystem
+  $file = file_unmanaged_save_data($filedata, $filepath . '/' . $filename, FILE_EXISTS_REPLACE);
+  if (!$file) {
+    // note: watchdog() first parameter ($type) is database limited to 16 characters
+    watchdog(
+      'semantic_similarity',
+      "Error storing node's export file %file.",
+      array('%file' => $filepath . '/' . $filename),
+      WATCHDOG_ERROR);
+  }
+}
+
+/**
+ * Converts (x)HTML tags into text characters.
+ *
+ * @param string $str
+ *   The (x)HTML string
+ *
+ * @return string
+ *   The text string.
+ *
+ * @link http://www.talkincode.com/convert-html-to-ascii-with-php-143.html
+ */
+function _semantic_similarity_html2text($str) {
+  // Replace line/paragraph/division tags (must be processed before <b> tags)
+  $str = preg_replace('@<(b|h)r[^>]*>@i',               ' ', $str);
+  $str = preg_replace('@<p[^>]*>(.*?)</p>@i',           ' $1 ', $str);
+  $str = preg_replace('@<div[^>]*>(.*?)</div>@i',       ' $1 ', $str);
+
+  // Replace bold/italics tags
+  $str = preg_replace('@<b[^>]*>(.*?)</b>@i',           '$1', $str);
+  $str = preg_replace('@<strong[^>]*>(.*?)</strong>@i', '$1', $str);
+  $str = preg_replace('@<i[^>]*>(.*?)</i>@i',           '$1', $str);
+  $str = preg_replace('@<em[^>]*>(.*?)</em>@i',         '$1', $str);
+
+  // Convert (x)HTML into ASCII
+  $str = strtr($str, array_flip(get_html_translation_table(HTML_ENTITIES)));
+
+  // Decode numbered entities
+  $str = preg_replace('/&#(\d+);/e', 'chr(str_replace(";","",str_replace("&#","","$0")))', $str);
+
+  // Strip any remaining HTML tags
+  $str = strip_tags($str);
+
+  return $str;
+}
+
+/**
+ * Returns semantic similarity scores computed by R.
+ *
+ * @return mixed
+ *   The node ids num-keyed array of scores if successfull, FALSE otherwise.
+ */
+function _semantic_similarity_compute_scores() {
+  // Invoke R to compute scores which it will dump into scores.csv file
+  $scores_bulk  = array();
+  $infile_name  = drupal_get_path('module', 'semantic_similarity') . '/R/compute_scores.R';
+  $outfile_name = SEMANTIC_SIMILARITY_PATH . '/compute_scores.Rout';
+  $filename     = SEMANTIC_SIMILARITY_PATH . '/scores.csv';
+  $cmd = sprintf("R CMD BATCH --slave --no-timing '--args %s %s %s %s %s %s %s %s %s %s %s' %s %s 2>&1",
+    SEMANTIC_SIMILARITY_CORPUS_PATH,
+    $filename,
+    variable_get('semantic_similarity_stopwords', SEMANTIC_SIMILARITY_DEFAULT_STOPWORDS),
+    variable_get('semantic_similarity_stemming', SEMANTIC_SIMILARITY_DEFAULT_STEMMING),
+    variable_get('semantic_similarity_weighting', SEMANTIC_SIMILARITY_DEFAULT_WEIGHTING),
+    variable_get('semantic_similarity_weighting_scope', SEMANTIC_SIMILARITY_DEFAULT_WEIGHTING_SCOPE),
+    variable_get('semantic_similarity_lw_scheme', SEMANTIC_SIMILARITY_DEFAULT_LW_SCHEME),
+    variable_get('semantic_similarity_gw_scheme', SEMANTIC_SIMILARITY_DEFAULT_GW_SCHEME),
+    variable_get('semantic_similarity_lsa', SEMANTIC_SIMILARITY_DEFAULT_LSA),
+    variable_get('semantic_similarity_lsa_dimcalc', SEMANTIC_SIMILARITY_DEFAULT_LSA_DIMCALC),
+    variable_get('semantic_similarity_correlation', SEMANTIC_SIMILARITY_DEFAULT_CORRELATION),
+    $infile_name,
+    $outfile_name
+  );
+
+  passthru($cmd, $return_var);
+
+  // Parse scores.csv file
+  if ($return_var === 0 && filesize($filename) && $file = @fopen($filename, 'r')) {
+    // @note: locale dependancy?
+    while (($scores_bulk[] = fgetcsv($file, filesize($filename), ',')) !== FALSE);
+    return _semantic_similarity_parse_R_matrix_to_array($scores_bulk);
+  }
+  else {
+    // note: watchdog() first parameter ($type) is database limited to 16 characters
+    watchdog('semantic_similar',
+      "Error getting nodes semantic similarity scores. Executed R command was %cmd and its ouput was recorded in %outfile.",
+      array('%cmd' => $cmd, '%outfile' => $outfile_name),
+      WATCHDOG_ERROR
+    );
+  }
+
+  return FALSE;
+}
+
+/**
+ * Parses an R 3D matrix into a node ids nids-keyed array of scores.
+ *
+ * @param array &$array_from
+ *   The R 3D matrix to parse. array(array(row numbers), array(scores))
+ *
+ * @return array $array_to
+ *   A 3D nid-keyed array of nids scores. array(array(nids), array(nids))
+ */
+function _semantic_similarity_parse_R_matrix_to_array(&$array_from) {
+  $array_to = array();
+
+  for ($i = 1; $i < count($array_from[0]); $i++) { // we start from 1 because we skip element [0, 0]
+    for ($j = $i+1; $j < count($array_from[0]); $j++) {
+      $array_to[intval($array_from[$i][0])][intval($array_from[0][$j])] = floatval($array_from[$i][$j]);
+    }
+  }
+
+  return $array_to;
+}

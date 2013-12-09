@@ -4,6 +4,11 @@
  */
 class sparql_views_plugin_query_sparql extends views_plugin_query {
   /**
+   * Endpoint that this query should be run against.
+   */
+  public $endpoint;
+
+  /**
    * Namespaces that are used in this query.
    */
   var $required_namespaces = array();
@@ -42,6 +47,11 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
   var $pager = NULL;
 
   /**
+   * An array of relationship fields.
+   */
+  var $relationships_fields = array();
+
+  /**
    * Constructor; Create the basic query object and fill with default values.
    */
   function init($base_table, $base_field, $options) {
@@ -53,6 +63,11 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
     // Check to see whether the necessary requirements are met in order to
     // create a valid query.
     $data = views_fetch_data();
+
+    // Set the endpoint.
+    $endpoint_uri = $data[$this->base_table]['table']['endpoint']->uri;
+    $this->endpoint = sparql_registry_load_by_uri($endpoint_uri);
+
     unset($data[$base_table]['table']);
     if (count($data[$base_table]) === 0) {
       $config = l(t('resource configuration'), 'admin/structure/sparql-views');
@@ -114,8 +129,7 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
   *   Provide a countquery if this is true, otherwise provide a normal query.
   */
   function query($view, $get_count = FALSE) {
-    $triple_pattern = '';
-    $optionals = '';
+    $graph_pattern = '';
     $filters = '';
     $orderby = '';
     $ns = rdf_get_namespaces();
@@ -125,27 +139,40 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
     // Create the SELECT clause.
     $select = 'SELECT';
 
-    // Add DISTINCT if selected in Query Settings.
-    if ($this->options['distinct'] == TRUE) {
+    // Add DISTINCT if selected in Query Settings. This is only added if this
+    // is not a COUNT query because the DISTINCT keyword is added within the
+    // COUNT function.
+    if ($this->options['distinct'] == TRUE && !$get_count) {
       $select .= ' DISTINCT';
     }
 
     // Add fields that the user has added to the Fields section in Views UI.
     foreach ($this->select_fields as $key => $field) {
-      // Do not add variable to SELECT if it will be replaced with a value.
-      if (!isset($this->replacements[$field])) {
-        // Add a question mark before each variable.
-        $select .= " ?$field";
+      // If this is not a COUNT query, add all of the fields.
+      if (!$get_count) {
+        // Do not add variable to SELECT if it will be replaced with a value.
+        if (!isset($this->replacements[$field])) {
+          // Add a question mark before each variable.
+          $select .= " ?$field";
+        }
+      }
+      // Otherwise, just add the COUNT function.
+      else {
+        // ARC2 doesn't currently parse COUNT queries if there is a DISTINCT
+        // keyword inside.
+        // $distinct = $this->options['distinct'] ? 'DISTINCT ' : '';
+        $select .= " (COUNT(?$field) AS ?pager_count)";
+        break;
       }
     }
 
-    // Create the WHERE clause.
-    $where = '';
-
     // Form the triple pattern.
+    $subject_triples = array();
     foreach($this->triples as $s => $pattern) {
       $statements = array();
-      $triple_pattern .= isset($this->replacements[$s]) ? $this->replacements[$s]['replacement_formatted'] : "?$s";
+      $optionals = array();
+      $triples_block = isset($this->replacements[$s]) ? $this->replacements[$s]['replacement_formatted'] : "?$s";
+
       foreach($pattern['pred_obj'] as $pred_obj) {
         $p = isset($this->replacements[$pred_obj['p']]) ? $this->replacements[$pred_obj['p']]['replacement_formatted'] : $this->validate_curie($pred_obj['p']);
 
@@ -155,13 +182,33 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
 
         // If this field is optional, wrap it in an OPTIONAL clause.
         if ($pred_obj['#optional'] == TRUE) {
-          $optionals .= "OPTIONAL {?$s $p $o}\n";
+          $optionals[] = array('object' => preg_replace('/^\?/', '', $o), 'statement' => "?$s $p $o");
         }
         else {
           $statements[] = " $p $o";
         }
       }
-      $triple_pattern .= implode(';', $statements) . ".\n";
+
+      // Form the graph pattern about the current subject.
+      if(empty($statements)) {
+        $triples_block = '';
+      } else {
+        $triples_block = $triples_block . implode(';', $statements) . '.';
+      }
+      $subject_graph_pattern = array('triples' => $triples_block, 'optionals' => $optionals);
+
+      // If this field forms a relationship, add the graph pattern its relationship parent.
+      if (!empty($this->relationship_fields[$s])) {
+        $relationship = $this->relationship_fields[$s];
+        $subject_triples[$relationship['parent']]['relationships'][$s] = $subject_graph_pattern;
+      } else {
+        $subject_triples[$s] = $subject_graph_pattern;
+      }
+    }
+
+    // Build the complete graph pattern.
+    foreach ($subject_triples as $s => $pattern_elements) {
+      $graph_pattern .= $this->build_graph_pattern($pattern_elements);
     }
 
     // Get namespaces.
@@ -187,14 +234,50 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
         $orderby .= " $order(?$field)\n";
       }
     }
-    $limit = isset($this->limit) ? "LIMIT $this->limit" : 'LIMIT 10';
+    $limit = isset($this->limit) ? "LIMIT $this->limit" : '';
+    $offset = isset($this->offset) ? " OFFSET $this->offset" : '';
     
     $query = $prefixes;
     $query .= $select . "\n";
-    $query .= "WHERE {\n$triple_pattern $optionals $filters} \n";
+    $query .= "WHERE {\n$graph_pattern$filters} \n";
     $query .= $orderby;
-    $query .= $limit;
+    if (!$get_count) {
+      $query .= $limit;
+      $query .= $offset;
+    }
     return $query;
+  }
+
+  function build_graph_pattern($pattern_elements) {
+    $subject_pattern = '';
+    $relationship_pattern = '';
+    $optionals = '';
+
+    $subject_pattern .= $pattern_elements['triples'] . "\n";
+
+    // Build optionals and add any nested relationship triples.
+    foreach ($pattern_elements['optionals'] as $optional_block) {
+      $optionals .= 'OPTIONAL {';
+
+      if (!empty($pattern_elements['relationships'][$optional_block['object']])) {
+        $optionals .= "\n" . $optional_block['statement'] . '.';
+        $optionals .= "\n" . $this->build_graph_pattern($pattern_elements['relationships'][$optional_block['object']]);
+        unset($pattern_elements['relationships'][$optional_block['object']]);
+      } else {
+        $optionals .= $optional_block['statement'];
+      }
+
+      $optionals .= "}\n";
+    }
+
+    // Build remaining non-optional relationships.
+    if (!empty($pattern_elements['relationships'])) {
+      foreach ($pattern_elements['relationships'] as $relationship) {
+        $relationship_pattern .= $this->build_graph_pattern($relationship);
+      }
+    }
+
+    return $subject_pattern . $relationship_pattern . $optionals;
   }
 
   /**
@@ -212,6 +295,7 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
     $this->pager->query($view);
 
     $view->build_info['query'] = $this->query($view);
+    $view->build_info['count_query'] = $this->query($view, TRUE);
   }
 
   /**
@@ -225,43 +309,68 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
     $views_result = array();
     $query = $view->build_info['query'];
     $views_data = sparql_views_views_data();
-    $endpoint_uri = $views_data[$this->base_table]['table']['endpoint']->uri;
-    $endpoint = sparql_registry_load_by_uri($endpoint_uri);
     $start = microtime(TRUE);
 
-    $sparql_result = sparql_request($query, $endpoint);
-    if (empty($sparql_result) || empty($sparql_result['result']['rows'])) {
-      $view->result = array();
-      vsm(t('No result returned. Please check your query and the endpoint status.'));
-      return;
-    }
-    $rows = $sparql_result['result']['rows'];
-    $fields = $sparql_result['result']['variables'];
-
-    // Add the fields that were replaced by values so that we can render the
-    // preset values as part of the result.
-    $fields = array_merge($fields, array_keys($this->replacements));
-    foreach ($rows as $row) {
-      $views_row = array();
-      foreach($fields as $field) {
-        if (isset($row[$field])) {
-          $views_row[$field] = $row[$field];
-        }
-        else if (isset($this->replacements[$field])) {
-          $views_row[$field] = $this->replacements[$field]['replacement_raw'];
-        }
+    // If this is a paged query, get the count.
+    $count_query = $view->build_info['count_query'];
+    try {
+      if ($this->pager->use_count_query() || !empty($view->get_total_rows)) {
+        $this->pager->execute_count_query($count_query);
       }
-      $views_result[] = (object) $views_row;
+
+      // Let the pager modify the query to add limits.
+      $this->pager->pre_execute($query);
+
+      // Get the results for display.
+      $sparql_result = sparql_request($query, $this->endpoint);
+      if (empty($sparql_result) || empty($sparql_result['result']['rows'])) {
+        $view->result = array();
+        vsm(t('No result returned. Please check your query and the endpoint status.'));
+        return;
+      }
+      $rows = $sparql_result['result']['rows'];
+      $fields = $sparql_result['result']['variables'];
+  
+      // Add the fields that were replaced by values so that we can render the
+      // preset values as part of the result.
+      $fields = array_merge($fields, array_keys($this->replacements));
+      foreach ($rows as $row) {
+        $views_row = array();
+        foreach($fields as $field) {
+          if (isset($row[$field])) {
+            $views_row[$field] = $row[$field];
+          }
+          else if (isset($this->replacements[$field])) {
+            $views_row[$field] = $this->replacements[$field]['replacement_raw'];
+          }
+        }
+        $views_result[] = (object) $views_row;
+      }
+      if ($this->options['consolidate']) {
+        $view->result = $this->consolidate_results($views_result);
+      }
+      else {
+        $view->result = $views_result;
+      }
+
+      if ($this->pager->use_pager()) {
+        $view->total_rows = $this->pager->get_total_items();
+      } else {
+        $view->total_rows = count($view->result);
+      }
     }
-    if ($this->options['consolidate']) {
-      $view->result = $this->consolidate_results($views_result);
+    catch (Exception $e) {
+      $view->result = array();
+      if (!empty($view->live_preview)) {
+        drupal_set_message(time());
+        drupal_set_message($e->getMessage(), 'error');
+      }
+      else {
+        vpr('Exception in @human_name[@view_name]: @message', array('@human_name' => $view->human_name, '@view_name' => $view->name, '@message' => $e->getMessage()));
+      }
     }
-    else {
-      $view->result = $views_result;
-    }
-    $view->total_rows = count($view->result);
+
     $view->execute_time = microtime(TRUE) - $start;
-    $view->pager['current_page'] = 0;
   }
 
   function add_triple($subject, $predicate, $object, $options = array()) {
@@ -286,6 +395,13 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
     }
     $this->triples[$subject]['pred_obj'][] = array_merge(array('p' => $predicate, 'o' => $o), $options);
 
+    return $alias;
+  }
+
+  function add_relationship_triple($subject, $predicate, $object, $options = array()) {
+    $alias = $this->add_triple($subject, $predicate, $object, $options);
+    $field_alias = preg_replace('/^\?/', '', $alias);
+    $this->relationship_fields[$field_alias] = array('field' => $field_alias, 'parent' => $subject);
     return $alias;
   }
 
@@ -320,21 +436,32 @@ class sparql_views_plugin_query_sparql extends views_plugin_query {
 
     // Get all the rows that share the same subject
     foreach ($views_result as $key => $value) {
-      foreach ($subjects as $subject) {
-        $row_subjects[$key][$subject] = $value->{$subject};
+      foreach ($subjects as $sub_key => $subject) {
+        // If the URI is included as a field, use it to consolidate. Otherwise
+        // consolidate on the subject that comes directly before.
+        if (isset($value->{$subject})) {
+          $row_key = $subject;
+          $row_subjects[$key][$subject] = $value->{$subject};
+        }
+        else {
+          $row_key = $subjects[$sub_key - 1];
+        }
         foreach ($triples[$subject]['pred_obj'] as $pred_obj) {
-          $field = $pred_obj['o'];
+          $field = substr($pred_obj['o'], 1);
           if (in_array($field, $properties)) {
-            $subject_uris[$subject][$value->{$subject}][$field][$value->{$field}] = $value->{$field};
+            $subject_uris[$row_key][$value->{$row_key}][$field][$value->{$field}] = $value->{$field};
           }
         }
       }
     }
     $rows = _sparql_views_super_unique($row_subjects);
+    // The row key will be the first occurance of the subject.
     foreach ($rows as $key => $row) {
       foreach ($row as $subject_field_name => $subject) {
         $results[$key][$subject_field_name][] = $subject;
-        $results[$key] += $subject_uris[$subject_field_name][$subject];
+        if (is_array($subject_uris[$subject_field_name][$subject])) {
+          $results[$key] += $subject_uris[$subject_field_name][$subject];
+        }
       }
     }
     return $results;

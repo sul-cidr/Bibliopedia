@@ -1,0 +1,84 @@
+# $Id: INSTALL.txt,v 1.1 2011/01/30 01:34:21 benoitborrel Exp $
+
+Semantic Similarity INSTALL
+
+
+CONTENTS OF THIS FILE
+---------------------
+  * System requirements
+  * Drupal dependencies
+  * Installation
+  * Configuration
+
+
+SYSTEM REQUIREMENTS
+-------------------
+
+1. Install the Java Development Kit (JDK), which also includes the Java Runtime
+   Environment (JRE). Visit http://java.sun.com/javase/downloads/index.jsp for
+   installation information.
+
+2. Install the R Project for Statistical Computing (later refered as R). Visit
+   http://www.r-project.org for installation information.
+   Note for Windows users: append the path to R binary to the system variable
+   $PATH, then restart the system.
+
+3. Install the required lsa (Latent Semantic Analysis) R package. Either:
+   3.A. using the system's terminal:
+        3.A.1. download the lsa package from a CRAN (Comprehensive R Archive
+               Network) mirror
+        3.A.2. type in the system's terminal:
+               R CMD INSTALL --library=<path_to_R_library> <path_to_lsa_archive>
+   Or:
+   3.B. within R:
+        3.B.1. type in the system's terminal:
+               R
+        3.B.2. within R's terminal, type in the following command:
+               install.packages("lsa", lib = file.path("<path_to_R_library"))
+               It will pop-up a list of mirrors in which you must select one. If
+               you got no pop-up, you should abort the package installation and
+               type chooseCRANmirror() first. If you were able to choose a
+               mirror, then it will download and install the lsa package and its
+               dependencies.
+
+Note: the library path is usually:
+  - linux:
+    /usr/lib/R/ or /usr/local/lib/R/site-library/ or
+    ~/R/i486-pc-linux-gnu-library/x.y/
+  - windows:
+    %PROGRAMFILES%\R\R-x.y.z\library\ or
+    %USERPROFILE%\Documents\R\win-library\x.y\
+
+Note 2: lsa package depends on rJava package wich in turn requires the JDK.
+
+
+DRUPAL DEPENDENCIES
+-------------------
+
+Semantic Similarity module depends on the following Drupal modules:
+  * Raphael
+  * Views
+
+
+INSTALLATION
+------------
+
+Before enabling the module, make sure the system meets the requirements.
+
+  1. In the filesystem, copy semantic_similarity folder to modules directory
+     (usually sites/all/modules/).
+
+  2. In the filesystem, make sure both the web server and R have write
+     permission into the module file system path
+    (usually sites/default/files/semantic_similarity).
+
+  3. At admin/build/modules, enable the Semantic Similarity module.
+
+
+CONFIGURATION
+-------------
+To use the default view:
+  1. At admin/build/views, enable 'semantic_similarity' view.
+
+To set the blocks display:
+  1. At admin/build/blocks, assign a theme region to the provided blocks.

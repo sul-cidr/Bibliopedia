@@ -1,0 +1,217 @@
+﻿<?php
+// $Id: semantic_similarity.install,v 1.5 2011/02/04 00:21:26 benoitborrel Exp $
+
+/**
+ * @file
+ * Semantic Similarity module install, update and uninstall functions.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function semantic_similarity_install() {
+  // Create module database schema
+  $result = drupal_install_schema('semantic_similarity');
+  if ($result[0]['success']) {
+    drupal_set_message(st('The Semantic Similarity module has been installed.'));
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function semantic_similarity_uninstall() {
+  // Delete all persistent variables
+  variable_del('semantic_similarity_default_stopwords');
+  variable_del('semantic_similarity_default_stemming');
+  variable_del('semantic_similarity_default_weighting');
+  variable_del('semantic_similarity_default_weighting_scope');
+  variable_del('semantic_similarity_default_lw_scheme');
+  variable_del('semantic_similarity_default_gw_scheme');
+  variable_del('semantic_similarity_default_lsa');
+  variable_del('semantic_similarity_default_lsa_dimcalc');
+  variable_del('semantic_similarity_default_correlation');
+  variable_del('semantic_similarity_default_limit');
+
+  // Delete the semantic_similarity/ folder within the files folder
+  _semantic_similarity_rmdir_rf(SEMANTIC_SIMILARITY_PATH);
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function semantic_similarity_requirements($phase) {
+  $requirements = array();
+
+  // Ensure translations don't break at install time
+  $t = get_t();
+
+  // Check installation of module + R-project with LSA package
+  if ($phase == 'runtime') {
+    $title = $t('Semantic Similarity');
+    $value = $t('Installation uncomplete');
+    $severity = REQUIREMENT_ERROR;
+
+    // 0. check module installation
+    // Recursively create required folders within the 'files' directory and check writability
+    $path = SEMANTIC_SIMILARITY_CORPUS_PATH;
+    if (!file_prepare_directory($path, FILE_CREATE_DIRECTORY)) {
+      $value = $t('Unable to create folders');
+      $description = $t("The directory %path and its subdirectory could not be created due to a misconfigured 'files' directory.", array('%path' => $path))
+        . ' '
+        . $t("Please ensure that the 'files' directory is correctly configured and that the webserver has permission to create directories.");
+    }
+    else {
+      // 1. Check R-project installation
+      // Windows: has to redirect stderr to capture stdout
+      // $output = shell_exec('R --version 2> stderr');
+      $output = shell_exec('R --version');
+
+      if ($output) {
+        $output = explode("\n", trim($output));
+        $R = $output[0];
+
+        // 2. Check lsa package is properly installed
+        $infile_name = drupal_get_path('module', 'semantic_similarity') . '/R/check_lsa_package.R';
+        $outfile_name = SEMANTIC_SIMILARITY_PATH . '/check_lsa_package.Rout';
+
+        passthru('R CMD BATCH --slave --no-timing ' . $infile_name . ' ' . $outfile_name, $return_var);
+
+        if ($return_var == 0 && filesize($outfile_name) && $file = @fopen($outfile_name, 'r')) {
+          // Fetch output
+          $output = @fread($file, filesize($outfile_name));
+          fclose($file);
+          $output = explode("\n", trim($output));
+          $lsa = _semantic_similarity_semantic_similarity_clean_R_line($output[0]);
+
+          // Set requirements report information
+          if ($lsa !== 'FALSE') {
+            $value = $t('Installed correctly');
+            $description = $t('%R installed and setup with lsa %lsa package.', array('%R' => $R, '%lsa' => $lsa));
+            $severity = REQUIREMENT_OK;
+          }
+          else {
+            $description = $t('%R installed but required lsa package is not properly installed.', array('%R' => $R));
+          }
+        }
+        else {
+          $description = $t('%R installed but error when invoking it.', array('%R' => $R));
+        }
+      }
+      else {
+        $description = $t('R project not installed.');
+      }
+    }
+
+    if ($severity == REQUIREMENT_ERROR) {
+      $description .= ' ' . $t('Refer to the module README.txt file for more information.');
+    }
+    $requirements['semantic_similarity'] = array(
+      'title' => $title,
+      'value' => $value,
+      'description' => $description,
+      'severity' => $severity,
+    );
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_schema().
+ */
+function semantic_similarity_schema() {
+  $schema = array();
+
+  // Define node_semantic_similarities table structure
+  $schema['node_semantic_similarity'] = array(
+    'description' => 'Data associated with Semantic Similarity',
+    'fields' => array(
+      'snid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The source node id',
+      ),
+      'tnid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The target node id',
+      ),
+      'score' => array(
+        'type' => 'float',
+        'not null' => TRUE,
+        'description' => 'The semantic similarity score between the source and target nodes',
+      ),
+    ),
+    'primary key' => array(
+      'snid',
+      'tnid',
+    ),
+    'indexes' => array(
+      'snid' => array('snid'),
+      'tnid' => array('tnid'),
+    ),
+  );
+
+  return $schema;
+}
+
+/********************
+ * HELPER FUNCTIONS *
+ ********************/
+
+/**
+ * Recursively removes a directory from the filesystem.
+ *
+ * @param string $dirname
+ *   The directory to delete.
+ *
+ * @see http://drupalcode.org/viewvc/drupal/contributions/modules/boost/boost.module?view=markup&pathrev=DRUPAL-6--1-18
+ */
+function _semantic_similarity_rmdir_rf($dirname) {
+  $empty = TRUE; // Start with an optimistic mindset
+  $files = glob($dirname . '/*', GLOB_NOSORT);
+
+  if ($files) {
+    foreach ($files as $file) {
+      if (is_dir($file)) {
+        if (!_semantic_similarity_rmdir_rf($file)) {
+          $empty = FALSE;
+        }
+      }
+      elseif (is_file($file) || is_link($file)) {
+        $empty = FALSE;
+        @unlink($file);
+      }
+      else {
+        $empty = FALSE; // it's something else, don't del to be safe.
+      }
+    }
+  }
+  // The reason for this elaborate safeguard is that Drupal will log even
+  // warnings that should have been suppressed with the @ sign. Otherwise,
+  // we'd just rely on the FALSE return value from rmdir().
+  return ($empty && @rmdir($dirname));
+}
+
+/**
+ * Removes '[1] ' within a line output coming from R.
+ *
+ * @param string &$string
+ *   The string to clean.
+ *
+ * @return string $string
+ *   The cleaned string.
+ */
+function _semantic_similarity_semantic_similarity_clean_R_line(&$string) {
+  $string = drupal_substr(trim($string), 4);
+  return $string;
+}
+
+/********************
+ * UPDATE FUNCTIONS *
+ ********************/

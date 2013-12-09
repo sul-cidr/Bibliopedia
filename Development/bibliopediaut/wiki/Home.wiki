@@ -1,9 +1,0 @@
-#summary Home
-
-= Home =
-
-Welcome to Bibliopedia.  
-
-= Details =
-
-A <a href="http://picasaweb.google.com/mikewidner/Bibliopedia#">gallery of relevant images</a> (process, class diagrams, etc.).

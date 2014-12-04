@@ -1,0 +1,25 @@
+name = Library
+description = Include content types in a library. Core Trigger and Views are recommended.
+package = Library
+core = 7.x
+
+files[] = library.install
+files[] = library.module
+files[] = library.actions.inc
+files[] = library.admin.inc
+files[] = library.pages.inc
+files[] = library.theme.inc
+
+files[] = includes/views/library.views.inc
+files[] = includes/views/handlers/library_handler_field_library_status.inc
+files[] = includes/views/handlers/library_handler_field_quantity.inc
+files[] = includes/views/handlers/library_handler_filter_library_status.inc
+
+configure = admin/config/workflow/library
+
+; Information added by Drupal.org packaging script on 2014-03-15
+version = "7.x-1.0-alpha1"
+core = "7.x"
+project = "library"
+datestamp = "1394880806"
+

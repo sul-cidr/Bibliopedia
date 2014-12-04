@@ -1,0 +1,1272 @@
+<?php
+
+if (module_exists('trigger')) {
+  include_once(drupal_get_path('module', 'library') . '/library.actions.inc');
+}
+
+/**
+ * Item type is not in the library.
+ */
+define('LIBRARY_ITEM_NOT_IN_LIBRARY', 0);
+
+/**
+ * Item type is part of the library collection.
+ */
+define('LIBRARY_ITEM_IN_LIBRARY', 1);
+
+/**
+ * Library Item is in circulation.
+ */
+define('LIBRARY_CIRCULATION', 0);
+
+/**
+ * Library Item is for reference only.
+ */
+define('LIBRARY_REFERENCE_ONLY', 1);
+
+/**
+ * Library Item is available.
+ */
+define('LIBRARY_ITEM_AVAILABLE', 0);
+
+/**
+ * Library Item is not available.
+ */
+define('LIBRARY_ITEM_UNAVAILABLE', 1);
+
+/**
+ * Library Items do not have barcodes.
+ */
+define('LIBRARY_NO_BARCODES', 0);
+
+/**
+ * Library Items have barcodes.
+ */
+define('LIBRARY_BARCODES', 1);
+
+/**
+ * Library action that does not change item status.
+ */
+define('LIBRARY_ACTION_NO_CHANGE', 0);
+
+/**
+ * Library action that makes an item unavailable.
+ */
+define('LIBRARY_ACTION_TYPE_UNAVAILABLE', 1);
+
+/**
+ * Library action that makes an item available.
+ */
+define('LIBRARY_ACTION_TYPE_AVAILABLE', 2);
+
+/**
+* Valid permissions for this module
+* @return array An array of valid permissions for this module
+*/
+function library_permission() {
+  $permissions = array(
+    'administer library' => array('title' => t('Administer Library'), 'description' => t('Modify library settings such as adding additional actions or modifying load periods')),
+    'administer transactions' => array('title' => t('Administer Library Transactions'), 'description' => t('Execute any library action on behalf of this user or another user that this user has permission to access')),
+    'view library history' => array('title' => t('View Library History'), 'description' => t('View history for each node or user that this user has permission to access')),
+    'view own library history' => array('title' => t('View Own Library History'), 'description' => t('View own library history')),
+  );
+  foreach (library_actions() as $aid => $action) {
+    $permissions['submit library ' . $action['name']] = array('title' => t('submit library ' . $action['name']));
+  }
+  return $permissions;
+}
+
+/*
+ * Determine whether a user may perform any library action
+ */
+function library_may_perform_action($aid) {
+  global $user;
+  if (user_access('administer transactions', $user)) {
+    return TRUE;
+  }
+  elseif ($aid) {
+    $action = library_get_action($aid);
+    if ($action->name) {
+      return user_access('submit library ' . $action->name, $user);
+    }
+  }
+  return FALSE;
+}
+
+function library_may_view_history($patron_user) {
+  global $user;
+  if (user_access('view library history')) {
+    return TRUE;
+  }
+  elseif (user_access('view own library history', $user)) {
+    if ($patron_user->uid == $user->uid) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Implementation of hook_help()
+ */
+function library_help($path, $arg) {
+  global $user;
+
+  switch ($path) {
+    case 'admin/config/workflow/library':
+      return t('Below are display options for library items and lists.');
+    case 'admin/config/workflow/library/duedates':
+      return t('Due date and overdue item functionality are disabled by default. Below are options for handling how long items may be unavailable. To enable due date functionality, set a number of days greater than zero for the period an item may be made unavailable for one of the actions below. You may add further actions on the <a href="@libraryactions">Library Actions</a> page.', array('@libraryactions' => url('admin/config/workflow/library/actions')));
+    case 'admin/config/workflow/library/actions':
+      return t('Two actions are included by default: Check In and Check Out.  You may rename these by clicking "edit action" or add more actions below. You must always have at least one action that makes items available and one that makes items unavailable. Each library action generates a custom trigger to which additional Drupal actions may be assigned. See <a href="@link">Tiggers</a> and <a href="@link2">Actions</a>', array('@link' => url('admin/structure/trigger/library'), '@link2' => url('admin/config/system/actions')));
+    case 'library-items/overdue':
+      return t('Below is a list of all overdue library items.  If you are a library administrator, you may <a href="@sendemail">send an email notifying all patrons with overdue items</a>.', array('@sendemail' => url('library-items/overdue/email')));
+  }
+}
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function library_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'node_type_form') {
+    $form['workflow']['library'] = array(
+      '#type' => 'radios',
+      '#title' => t('Library Item'),
+      '#default_value' => variable_get('library_' . $form['#node_type']->type, LIBRARY_ITEM_NOT_IN_LIBRARY),
+      '#options' => array(LIBRARY_ITEM_IN_LIBRARY => t('Yes'), LIBRARY_ITEM_NOT_IN_LIBRARY => t('No')),
+      '#description' => t('Library items can have a status of available or unavailable.')
+    );
+  }
+  elseif (!empty($form['#node_edit_form'])) {
+    $node = $form['#node'];
+    $node_type = $form['type']['#value'];
+    if (variable_get('library_' . $node_type, LIBRARY_ITEM_NOT_IN_LIBRARY) == LIBRARY_ITEM_IN_LIBRARY) {
+      $form['#cache'] = TRUE;
+      $form['#tree'] = TRUE;
+
+      if (!isset($node->library_items)) {
+        $node->library_items[0] = array();
+      }
+
+      if (isset($form_state['library_item_count']) && !is_array($form_state['library_item_count'])) {
+        $item_count = $form_state['library_item_count'];
+      }
+      else {
+        $item_count = max(1, empty($node->library_items) ? 1 : count($node->library_items));
+      }
+
+      // Add a wrapper for the items and more button.
+      $form['library_items_fieldset'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Instances of this item in the library'),
+        '#prefix' => '<div id="library-items-fieldset-wrapper">',
+        '#suffix' => '</div>',
+        '#theme' => 'library_items_field',
+      );
+
+      // Add the current choices to the form.
+      for ($i = 0; $i < $item_count; $i++) {
+        if (isset($node->library_items[$i])) {
+          $form['library_items_fieldset']['library_items'][$i] = _library_item_form($i, $node->library_items[$i]);
+        }
+        else {
+          $form['library_items_fieldset']['library_items'][$i] = _library_item_form($i, array());
+        }
+      }
+
+      $form['library_items_fieldset']['add_library_item'] = array(
+        '#type' => 'submit',
+        '#value' => t('Add an Item'),
+        '#weight' => 1,
+        '#submit' => array('library_add_more_add_one'), // If no javascript action.
+        '#ajax' => array(
+          'callback' => 'library_add_more_callback',
+          'wrapper' => 'library-items-fieldset-wrapper',
+        ),
+      );
+      $form['#submit'][] = 'library_node_form_submit';
+    }
+  }
+}
+
+/*
+ * Gets the node object, modifies the title, and updates the node in the form_state
+ */
+
+function library_node_form_submit($form, &$form_state) {
+  if (variable_get('library_item_barcodes', LIBRARY_NO_BARCODES) == LIBRARY_BARCODES) {
+    $items = $form_state['values']['library_items'];
+    $row = 0;
+    $last_key = count($items) - 1;
+    foreach ($items as $key => $item) {
+      //Remove empty item instance if it's not being used
+      if ($key > 0 && $key == $last_key && empty($item['id']) && empty($item['barcode'])) {
+        unset($form_state['values']['library_items'][$key]);
+      }
+      $row++;
+    }
+  }
+}
+
+
+/**
+ * Submit handler to add another instance of a library item to a node form. This handler is used when
+ * javascript is not available. It makes changes to the form state and the
+ * entire form is rebuilt during the page reload.
+ */
+function library_add_more_add_one($form, &$form_state) {
+  if (!isset($form_state['library_item_count'])) {
+    $form_state['library_item_count'] = count($form_state['values']['library_items']);
+  }
+  $form_state['library_item_count']++;
+
+  $form_state['rebuild'] = TRUE;
+}
+
+
+/**
+ * Subform for an instance of a library item on node create/edit
+ */
+function _library_item_form($delta, $item = array()) {
+
+  $form = array(
+    '#tree' => TRUE,
+  );
+
+  $form['id'] = array(
+    '#type' => 'hidden',
+    '#value' => isset($item['id']) ? $item['id'] : '',
+    '#parents' => array('library_items', $delta, 'id'),
+  );
+  if (variable_get('library_item_barcodes', LIBRARY_NO_BARCODES) == LIBRARY_BARCODES) {
+    $form['barcode'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Barcode'),
+      '#default_value' => isset($item['barcode']) ? $item['barcode'] : '',
+      '#required' => TRUE,
+      '#parents' => array('library_items', $delta, 'barcode'),
+    );
+  }
+  $form['in_circulation'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Reference Only'),
+    '#default_value' => isset($item['in_circulation']) ? $item['in_circulation'] : LIBRARY_CIRCULATION,
+    '#return_value' => LIBRARY_REFERENCE_ONLY,
+    '#parents' => array('library_items', $delta, 'in_circulation'),
+  );
+  $form['notes'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Notes'),
+    '#size' => 20,
+    '#maxlength' => 128,
+    '#default_value' => isset($item['notes']) ? $item['notes'] : '',
+    '#parents' => array('library_items', $delta, 'notes'),
+  );
+  if ($delta > 0) {
+    if (!isset($item['id']) || (isset($item['id']) && $item['library_status'] == LIBRARY_ITEM_AVAILABLE)) {
+      //Only allow deletes of items that are either new or checked in
+      $form['delete'] = array(
+        '#type' => 'checkbox',
+        '#title' => t('Delete'),
+        '#default_value' => 0,
+        '#return_value' => 1,
+        '#parents' => array('library_items', $delta, 'delete'),
+      );
+    }
+  }
+  if (isset($item['library_status']) && $item['library_status'] == LIBRARY_ITEM_UNAVAILABLE) {
+    $form['in_circulation']['#disabled'] = TRUE;
+  }
+
+  return $form;
+}
+
+
+/**
+ * Implementation of hook_init().
+ */
+function library_init() {
+    drupal_add_css(drupal_get_path('module', 'library') . '/library.css');
+}
+
+/**
+* Menu callback; loads a library object
+*/
+function library_load($item_id) {
+  if (!is_numeric($item_id)) {
+    return FALSE;
+  }
+  else {
+    $select = db_select('library', 'l');
+    $select->join('node', 'n', 'n.nid = l.nid');
+    $select->addField('l', 'id');
+    $select->addField('l', 'barcode');
+    $select->addField('l', 'nid');
+    $select->addField('l', 'in_circulation');
+    $select->addField('l', 'library_status');
+    $select->addField('l', 'notes');
+    $select->addField('l', 'created');
+    $select->addField('n', 'title');
+    $select->addField('n', 'type');
+    $select->addField('n', 'status');
+    $select->condition('l.id', $item_id);
+    $select->range(0, 1);
+    $item = $select->execute()->fetchObject();
+    if ($item->in_circulation == LIBRARY_CIRCULATION && $item->library_status == LIBRARY_ITEM_UNAVAILABLE) {
+      $last = library_get_last_transaction_by_item($item, LIBRARY_ACTION_TYPE_UNAVAILABLE);
+      if ($last) {
+        $item->last_patron_uid = $last->uid;
+        $item->last_transaction_id = $last->tid;
+        $item->last_transaction_name = $last->action_name;
+        if (!empty($last->duedate)) {
+          $item->last_due_date = $last->duedate;
+        }
+      }
+    }
+  }
+  return $item;
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function library_menu() {
+  $items['library-items'] = array(
+    'title' => 'Library',
+    'page callback' => 'library_display_items',
+    'access arguments' => array('access content'),
+    'type' => MENU_SUGGESTED_ITEM,
+    'file' => 'library.pages.inc',
+  );
+  $items['node/%node/library/history'] = array(
+    'title' => 'History',
+    'page callback' => 'library_history',
+    'page arguments' => array(1),
+    'access arguments' => array('view library history'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'library.pages.inc',
+  );
+  $items['user/%user/library/history'] = array(
+    'title' => 'History',
+    'page callback' => 'library_history_singleuser',
+    'page arguments' => array(1),
+    'access callback' => 'library_may_view_history',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'library.pages.inc',
+  );
+  $items['library-items/transaction/view/%'] = array(
+    'title' => 'View a Transaction',
+    'page callback' => 'library_transaction_view',
+    'page arguments' => array(3),
+    'access arguments' => array('administer transactions'),
+    'type' => MENU_CALLBACK,
+    'file' => 'library.pages.inc',
+  );
+  $items['library-items/transaction/%/%library'] = array(
+    'title' => 'Perform a Library Transaction',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('library_transaction_form', 2, 3),
+    'access callback' => 'library_may_perform_action',
+    'access arguments' => array(2),
+    'type' => MENU_CALLBACK,
+    'file' => 'library.pages.inc',
+  );
+  $items['library-items/overdue'] = array(
+    'title' => 'Overdue Items',
+    'page callback' => 'library_overdue_items',
+    'access arguments' => array('administer transactions'),
+    'type' => MENU_SUGGESTED_ITEM,
+    'file' => 'library.pages.inc',
+  );
+  $items['library-items/overdue/email'] = array(
+    'title' => 'Email patrons with overdue items',
+    'page callback' => 'library_notify_overdue',
+    'access arguments' => array('administer transactions'),
+    'type' => MENU_CALLBACK,
+    'file' => 'library.admin.inc',
+  );
+
+  $items['admin/config/workflow/library'] = array(
+    'title' => 'Library Settings',
+    'description' => 'Edit Library Settings.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('library_admin_settings'),
+    'access arguments' => array('administer library'),
+    'file' => 'library.admin.inc',
+  );
+  $items['admin/config/workflow/library/display'] = array(
+    'title' => 'Display',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['admin/config/workflow/library/duedates'] = array(
+    'title' => 'Loan Periods',
+    'description' => 'Enable loan periods for checkouts and configure overdue emails.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('library_admin_settings_overdue'),
+    'access arguments' => array('administer library'),
+    'file' => 'library.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['admin/config/workflow/library/actions'] = array(
+    'title' => 'Library Actions',
+    'description' => 'View, edit, or add library actions.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('library_admin_new_action'),
+    'access arguments' => array('administer library'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'library.admin.inc',
+  );
+  $items['admin/config/workflow/library/actions/edit'] = array(
+    'title' => 'Edit Library Action',
+    'page arguments' => array('library_admin_action'),
+    'access arguments' => array('administer library'),
+    'type' => MENU_CALLBACK,
+    'file' => 'library.admin.inc',
+  );
+  $items['library-items/autocomplete'] = array(
+    'title' => 'Library Autocomplete',
+    'page callback' => 'library_autocomplete',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+    'file' => 'library.admin.inc',
+  );
+  $items['library-items/patrons/autocomplete'] = array(
+    'title' => 'Patron Autocomplete',
+    'page callback' => 'library_patron_autocomplete',
+    'access arguments' => array('access user profiles'),
+    'type' => MENU_CALLBACK
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_forms().
+ */
+function library_forms() {
+  $forms['library_admin_new_action']['callback'] = 'library_admin_action';
+  return $forms;
+}
+
+/**
+ * Menu callback for AHAH additions.
+ */
+function library_add_more_callback($form, $form_state) {
+  return $form['library_items_fieldset'];
+}
+
+/**
+ *  Implements hook_node_load()
+ */
+function library_node_load($nodes, $types) {
+  foreach ($nodes as $node) {
+    if (variable_get('library_' . $node->type, LIBRARY_ITEM_NOT_IN_LIBRARY) == LIBRARY_ITEM_IN_LIBRARY) {
+      $nids[] = $node->nid;
+    }
+  }
+  if (!isset($nids) || !count($nids)) {
+    return;
+  }
+
+  //Make sure every eligible node has at least one library item instance
+  $new_to_library = db_select('node', 'n')
+    ->fields('n', array('nid'))
+    ->where('n.nid IN (:nids) AND n.nid NOT IN (SELECT nid FROM {library})', array(':nids' => $nids))
+    ->execute();
+
+  foreach ($new_to_library as $record) {
+    $nid = db_insert('library')
+      ->fields(array(
+        'nid' => $record->nid,
+        'in_circulation' => LIBRARY_CIRCULATION,
+        'library_status' => LIBRARY_ITEM_AVAILABLE,
+        'created' => REQUEST_TIME
+      ))
+      ->execute();
+  }
+
+  //Load library items associated with this node
+  $result = db_select('library', 'l')
+    ->fields('l', array('id', 'barcode', 'nid', 'in_circulation', 'library_status', 'notes', 'created'))
+    ->where('l.nid IN (:nids)', array(':nids' => $nids))
+    ->orderBy('l.nid')
+    ->execute();
+
+  $row = 0;
+  foreach ($result as $item) {
+    $nodes[$item->nid]->library_items[$row] = array(
+      'id' => $item->id,
+      'barcode' => check_plain($item->barcode),
+      'nid' => $item->nid,
+      'in_circulation' => $item->in_circulation,
+      'library_status' => $item->library_status,
+      'notes' => $item->notes,
+      'created' => $item->created
+    );
+    if ($item->in_circulation == LIBRARY_CIRCULATION && $item->library_status == LIBRARY_ITEM_UNAVAILABLE) {
+      $last = library_get_last_transaction_by_item($item, LIBRARY_ACTION_TYPE_UNAVAILABLE);
+      if ($last) {
+        $nodes[$item->nid]->library_items[$row]['last_patron_uid'] = $last->uid;
+        $nodes[$item->nid]->library_items[$row]['last_transaction_id'] = $last->tid;
+        $nodes[$item->nid]->library_items[$row]['last_transaction_name'] = $last->action_name;
+        if (!empty($last->duedate)) {
+          $nodes[$item->nid]->library_items[$row]['last_due_date'] = $last->duedate;
+        }
+      }
+    }
+    $row++;
+  }
+}
+
+/**
+ * Implements hook_node_validate().
+ *
+ * Check that barcodes are unique if the node is in the library and barcodes are enabled
+ */
+function library_node_validate($node, $form) {
+  if (variable_get('library_' . $node->type, LIBRARY_ITEM_NOT_IN_LIBRARY) == LIBRARY_ITEM_IN_LIBRARY && variable_get('library_item_barcodes', LIBRARY_NO_BARCODES) == LIBRARY_BARCODES) {
+    if (isset($node->library_items) && !$node->library_items) {
+      form_set_error('library_items', t('Since this content is in the library and barcodes are enabled, you must enter a unique barcode for at least one item.'));
+    }
+    $items = $node->library_items;
+    if ($items) {
+      //Check that each barcode is unique
+      foreach ($items as $key => $item) {
+
+        $result = db_select('library','l')
+          ->fields('l',array('id'))
+          ->condition('barcode','','<>')
+          ->condition('barcode',check_plain($item['barcode'] . ''),'=')
+          ->condition('id',$item['id'],'<>')
+          ->execute()
+          ->rowCount();
+
+        if ((empty($item['id']) && $result > 0) || (!empty($item['id']) && $result > 1)) {
+          form_set_error('library_items][' . $key . '][barcode', t('The barcode %barcode already exists. Please enter a different barcode.', array('%barcode' => $item['barcode'])));
+        }
+      }
+    }
+    else {
+      form_set_error('library_items', t('Since this content is in the library and barcodes are enabled, you must enter a unique barcode for at least one item.'));
+    }
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ *
+ * As a new node is being inserted into the database, we need to do our own
+ * database inserts.
+ */
+function library_node_insert($node) {
+  if (variable_get('library_' . $node->type, LIBRARY_ITEM_NOT_IN_LIBRARY) == LIBRARY_ITEM_IN_LIBRARY) {
+    $items = $node->library_items;
+    if ($items) {
+      foreach ($items as $key => $item) {
+        if (!isset($item['delete']) || (isset($item['delete']) && $item['delete'] <> 1) ) {
+          // Notice that we are ignoring any revision information using $node->nid
+          $nid = db_insert('library')
+            ->fields(array(
+              'nid' => $node->nid,
+              'barcode' => check_plain($item['barcode'] . ''),
+              'in_circulation' => $item['in_circulation'],
+              'library_status' => LIBRARY_ITEM_AVAILABLE,
+              'notes' => check_plain($item['notes'] . ''),
+              'created' => REQUEST_TIME
+            ))
+            ->execute();
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_node_update().
+ *
+ * As an existing node is being updated, we need to add our own updates
+ */
+function library_node_update($node) {
+  if (variable_get('library_' . $node->type, LIBRARY_ITEM_NOT_IN_LIBRARY) == LIBRARY_ITEM_IN_LIBRARY) {
+    $items = $node->library_items;
+    if ($items) {
+      foreach ($items as $key => $item) {
+        if (isset($item['delete']) && $item['delete'] == 1) {
+          $nid = db_delete('library_transactions')
+            ->condition('item_id', $item['id'])
+            ->execute();
+          $nid = db_delete('library')
+            ->condition('id', $item['id'])
+            ->execute();
+          unset($node->library_items[$key]);
+        }
+        else {
+          $lid = db_select('library')
+            ->fields('library', array('id'))
+            ->condition('id',$item['id'],'=')
+            ->execute();
+          if ($lid->rowCount() == 1) {
+            $updated = db_update('library')
+              ->fields(array(
+              'barcode' => check_plain($item['barcode'] . ''),
+              'in_circulation' => $item['in_circulation'],
+              'notes' => check_plain($item['notes'] . ''),
+            ))
+              ->condition('id', $item['id'])
+              ->execute();
+          }
+          else if ($lid->rowCount() == 0) {
+            // Notice that we are ignoring any revision information using $node->nid
+            $inserted = db_insert('library')
+              ->fields(array(
+              'nid' => $node->nid,
+              'barcode' => check_plain($item['barcode'] . ''),
+              'in_circulation' => $item['in_circulation'],
+              'library_status' => LIBRARY_ITEM_AVAILABLE,
+              'notes' => check_plain($item['notes'] . ''),
+              'created' => REQUEST_TIME
+            ))
+              ->execute();
+          } else {
+            watchdog('library','Database inconsistency.',WATCHDOG_ERROR);
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_node_delete().
+ *
+ * When a node is deleted, we need to remove all related records from the library.
+ */
+function library_node_delete($node) {
+  // Notice that we're deleting even if the content type is not in the library.
+  db_delete('library')
+    ->condition('nid', $node->nid)
+    ->execute();
+  db_delete('library_transactions')
+    ->condition('nid', $node->nid)
+    ->execute();
+}
+
+/**
+ * Implements hook_node_view().
+ *
+ * Display library items when a node is viewed
+ */
+function library_node_view($node, $build_mode = 'full') {
+  if (variable_get('library_' . $node->type, LIBRARY_ITEM_NOT_IN_LIBRARY) == LIBRARY_ITEM_IN_LIBRARY) {
+    $items = $node->library_items;
+    if (!empty($items)) {
+      $node->content['library_items'] = array(
+        '#markup' => theme('library_items', array('items' => $items)),
+        '#weight' => -4,
+      );
+    }
+  }
+}
+
+/**
+ * Returns a list of overdue library items
+ */
+function library_get_overdue_items() {
+  //Select all the nodes that have ever had an item made unavailable
+  $items = db_select('library','l')
+    ->fields('l',array('id'))
+    ->condition('library_status',LIBRARY_ITEM_UNAVAILABLE,'=')
+    ->execute();
+  $overdueitems = array();
+  foreach ($items as $result) {
+    $item = library_load($result->id);
+    if (!empty($item->last_patron_uid) && !empty($item->last_due_date) && (REQUEST_TIME > $item->last_due_date)) {
+      $patron = user_load($item->last_patron_uid);
+      if (!isset($overdueitems[$item->last_patron_uid]['patron']['patron_email'])) {
+        $overdueitems[$item->last_patron_uid]['patron']['patron_email'] = $patron->mail;
+        $overdueitems[$item->last_patron_uid]['patron']['patron_name'] = $patron->name;
+      }
+      $overdueitems[$item->last_patron_uid]['items'][$item->id] = array('item_name' => $item->title, 'nid' => $item->nid, 'due_date' => $item->last_due_date, 'in_circulation' => $item->in_circulation);
+    }
+  }
+  return $overdueitems;
+}
+
+/**
+ * Get the due date given a check out date
+ *
+ * @param $checkout_date
+ *   The date an item was made unavailable
+ * @param $action
+ *   The clean name of the action performed
+ * @param $type
+ *   The node type
+ * @returns a UNIX TIMESTAMP if due dates are enabled else it returns NULL
+ */
+function library_get_due_date($checkout_date = NULL, $action, $type) {
+  if (empty($checkout_date)) {
+    $checkout_date = REQUEST_TIME;
+  }
+  $allowed = variable_get('library_period_for_' . $type . '_' . $action, 0);
+  if ($allowed > 0) {
+    return ($checkout_date + $allowed);
+  }
+  else {
+    return NULL;
+  }
+}
+
+/**
+ * Check to see if due dates are enabled for any actions
+ *
+ * @returns BOOLEAN
+ */
+function library_duedates_enabled($type = NULL) {
+  if (is_null($type)) {
+    $duedates = 0;
+    foreach (library_get_item_types() as $type) {
+      if ($duedates == 0) {
+        $duedates = variable_get('library_' . $type . '_due_dates', 0);
+        if ($duedates > 0) {
+          return TRUE;
+        }
+      }
+      else {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+  else {
+    $duedates = variable_get('library_' . $type . '_due_dates', 0);
+    return ($duedates > 0);
+  }
+}
+
+function library_get_transactions_query() {
+  $select = db_select('library_transactions', 'lt');
+  $select->join('library_actions', 'la', 'la.aid = lt.action_aid');
+  $select->join('users', 'u', 'u.uid = lt.uid');
+  $select->join('library', 'l', 'l.id = lt.item_id');
+  $select->join('node', 'n', 'n.nid = lt.nid');
+  $select->addField('lt', 'tid');
+  $select->addField('lt', 'item_id');
+  $select->addField('lt', 'nid');
+  $select->addField('lt', 'uid');
+  $select->addField('lt', 'duedate');
+  $select->addField('lt', 'notes');
+  $select->addField('lt', 'created');
+  $select->addField('la', 'aid');
+  $select->addField('la', 'name', 'action_name');
+  $select->addField('la', 'status_change');
+  $select->addField('u', 'name', 'username');
+  $select->addField('l', 'barcode');
+  $select->addField('l', 'in_circulation');
+  $select->addField('l', 'library_status');
+  $select->addField('n', 'title', 'item_name');
+  $select->orderBy('lt.created', 'DESC');
+  return $select;
+}
+
+function library_get_transactions_by_item($item) {
+  $select = library_get_transactions_query();
+  $select->condition('lt.item_id', $item->id);
+  $transactions = $select->execute()->fetchAll();
+  if ($transactions) {
+    return $transactions;
+  }
+  else {
+    return NULL;
+  }
+}
+
+function library_get_transactions_by_node($node) {
+  $transactions = NULL;
+  if ($node->library_items) {
+    $select = library_get_transactions_query();
+    $select->condition('lt.nid', $node->nid);
+    $transactions = $select->execute()->fetchAll();
+  }
+  return $transactions;
+}
+
+function library_get_transactions_by_singleuser($user) {
+  $select = library_get_transactions_query();
+  $select->condition('lt.uid', $user->uid);
+  $transactions = $select->execute()->fetchAll();
+
+  if ($transactions) {
+    return $transactions;
+  }
+  else {
+    return NULL;
+  }
+}
+
+function library_get_transaction_by_tid($tid) {
+  if (isset($tid) && is_numeric($tid)) {
+    $select = library_get_transactions_query();
+    $select->condition('lt.tid', $tid);
+    $transaction = $select->execute()->fetchAll();
+    return $transaction;
+  }
+  else {
+    return NULL;
+  }
+}
+
+/**
+ * @param $node
+ *   Node object or array
+ * @param $transaction_type
+ *   (optional) Type of transaction to return
+ * @return
+ *   Transaction array or NULL if none found
+ */
+function library_get_last_transaction_by_item($item, $type = NULL) {
+  $transactions = library_get_transactions_by_item($item);
+  if (isset($transactions)) {
+    foreach ($transactions as $transaction) {
+      if ($type && $type == $transaction->status_change) {
+        return $transaction;
+      }
+      else {
+        //Only return transactions that changed the status of the item
+        switch ($transaction->status_change) {
+          case LIBRARY_ACTION_TYPE_UNAVAILABLE:
+            return $transaction;
+          case LIBRARY_ACTION_TYPE_AVAILABLE:
+            return $transaction;
+          default:
+            break;
+        }
+      }
+    }
+    return NULL;
+  }
+}
+
+/**
+ * @param $excluded
+ *   (optional) Numeric status change type of actions to exclude
+ * @return
+ *   Array of actions
+ */
+function library_actions($aids = array(), $display_all = TRUE) {
+  $result = NULL;
+  if (!empty($aids)) {
+    $result = db_query("SELECT name, aid, status_change from {library_actions} WHERE aid IN (:aids) ORDER BY name", array(':aids' => $aids));
+  }
+  //Just generating a list with no particular permissions
+  elseif ($display_all) {
+    $result = db_query("SELECT name, aid, status_change from {library_actions} ORDER BY name");
+  }
+  $view_all_library_actions = ($display_all || user_access('administer transactions'));
+  $actions = array();
+  if ($result) {
+    foreach ($result as $action) {
+      if ($view_all_library_actions || user_access('submit library ' . $action->name)) {
+        $actions[$action->aid] = array('name' => t($action->name), 'status_change' => $action->status_change);
+      }
+    }
+  }
+  return array_filter($actions);
+}
+
+function library_get_action($aid) {
+  if (!empty($aid) && is_numeric($aid)) {
+    $action = db_query('SELECT * FROM {library_actions} WHERE aid = :aid', array(':aid' => $aid))->fetchObject();
+    if ($action) {
+      return $action;
+    }
+    else {
+      return FALSE;
+    }
+  }
+  return FALSE;
+}
+
+function library_clean_action_name($name) {
+  $string = str_replace(" ", "_", strtolower($name));
+  $pattern = '/[^\w]/';
+  return preg_replace($pattern, '', $string);
+}
+
+function library_get_action_links($item) {
+  $aids = array();
+  $secondary_aids = array();
+  $actions = array();
+  $secondary_actions = array();
+  if ($item['in_circulation'] == LIBRARY_REFERENCE_ONLY) {
+    $reference_actions = variable_get('library_links_display_reference', array());
+    foreach ($reference_actions as $aid) {
+      $aids[] = $aid;
+    }
+  }
+  elseif ($item['library_status'] == LIBRARY_ITEM_AVAILABLE) {
+    $available_actions = variable_get('library_links_display_available', array());
+    foreach ($available_actions as $aid) {
+      $aids[] = $aid;
+    }
+  }
+  else {
+    $unavailable_actions = variable_get('library_links_display_unavailable', array());
+    foreach ($unavailable_actions as $aid) {
+      $aids[] = $aid;
+    }
+  }
+  $actions = library_actions($aids, FALSE);
+  $action_links = array();
+
+  $patron_uid = '';
+
+  $librarian = user_access('administer transactions') && user_access('access user profiles');
+  if (!$librarian) {
+    global $user;
+    $patron_uid = $user->uid;
+  }
+
+  foreach ($actions as $aid => $action) {
+    if (($action['status_change'] == LIBRARY_ACTION_TYPE_AVAILABLE || $item['library_status'] == LIBRARY_ITEM_UNAVAILABLE) && !empty($item['last_patron_uid']) ) {
+      if (empty($patron_uid) || ($item['last_patron_uid'] == $patron_uid)) {
+        $action_links[] = l($action['name'], 'library-items/transaction/' . $aid . '/' . $item['id'] . '/' . $item['last_patron_uid']);
+      }
+    }
+    else {
+      $action_links[] = l($action['name'], 'library-items/transaction/' . $aid . '/' . $item['id']);
+    }
+  }
+  return $action_links;
+}
+
+/**
+ * Get a list of all library item nodes
+ * @return
+ *   An array of library items
+ */
+function library_get_items_group_by_node() {
+  $select = db_select('library', 'l');
+  $select->join('node', 'n', 'n.nid = l.nid');
+  $select->addField('n', 'nid');
+  $select->condition('n.status', 1);
+  $select->orderBy('n.title');
+  $result = $select->extend('PagerDefault')->limit(50)->execute()->fetchField();
+  $nodes = array();
+  foreach ($result as $nid) {
+    $nodes[] = node_load($nid);
+  }
+  return $nodes;
+}
+
+function library_get_node_by_item_id($id) {
+  $result = db_query("SELECT nid FROM {library} WHERE id = :id", array(':id' => $id));
+  $record = $result->fetchField();
+  $node = node_load($record);
+  return $node;
+}
+
+function library_get_item_by_barcode($barcode) {
+  $result = db_query("SELECT id FROM {library} WHERE barcode = :barcode", array(':barcode' => check_plain($barcode . '')));
+  $record = $result->fetchField();
+  $item = library_load($record);
+  return $item;
+}
+
+/**
+ * Get a list of all content types that are part of the library
+ * @return
+ *   An array of content types
+ */
+function library_get_item_types($op = 'types') {
+  $item_types = array();
+  foreach (node_type_get_types() as $type => $info) {
+    $var = variable_get('library_' . $type, 0);
+    if ($var == 1) {
+      if ($op == 'types') {
+        $item_types[] = $type;
+      }
+      elseif ($op == 'names') {
+        $item_types[$type] = $info->name;
+      }
+    }
+  }
+  return $item_types;
+}
+
+/**
+ * Implementation of hook_cron().
+ */
+
+function library_cron() {
+  $last_update = variable_get('library_cron', 0);
+  $next_update = $last_update + (24 * 60 * 60);
+
+  if (REQUEST_TIME > $next_update && library_duedates_enabled() && variable_get('library_send_automatic_email', 0) == 1) {
+    $records = library_get_overdue_items();
+    if (!empty($records)) {
+      $num_emails = 0;
+      foreach ($records as $patron_id => $record) {
+
+        foreach ($record['items'] as $id => $item) {
+          if (($last_update >= $item['due_date'])) {
+            unset($record['items'][$id]);
+          }
+        }
+
+        $params = $record;
+        if (count($record['items']) >= 1) {
+          drupal_mail('library', 'notify_overdue', $params['patron']['patron_email'], language_default(), $params);
+        }
+
+        $num_emails++;
+      }
+      watchdog('library', '%number overdue email notifications sent successfully.', array('%number' => $num_emails));
+    }
+    variable_set('library_cron', REQUEST_TIME);
+  }
+}
+
+function library_autocomplete_input($item = NULL) {
+  if (variable_get('library_item_barcodes', LIBRARY_NO_BARCODES) == LIBRARY_BARCODES) {
+    $form['item_id'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Item Barcode'),
+      '#default_value' => ($item ? $item->barcode : ''),
+      '#required' => TRUE,
+      '#description' => t('Enter the barcode of the item.')
+    );
+  }
+  else {
+    $my_default_value = ($item ? $item->title : '');
+    $my_default_value .=  ($item ? ' [id:' . $item->id . ']' : '');
+    $form['item_id'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Library Item'),
+      '#default_value' => $my_default_value,
+      '#autocomplete_path' => 'library-items/autocomplete',
+      '#required' => TRUE,
+      '#description' => t('Begin typing the title of the item, then select the chosen item from the provided list.')
+    );
+  }
+  return $form;
+}
+
+function library_get_table_header() {
+  $results = array();
+  $display_cat_var = FALSE;
+  foreach (variable_get('library_taxonomy_display', array()) as $key => $vocab) {
+    if ($vocab) {
+      $display_cat_var = TRUE;
+    }
+  }
+  $results['display_categories'] = module_exists('taxonomy') && $display_cat_var;
+  $results['display_status'] = variable_get('library_list_status_display', 0) == 1;
+  $results['display_quantity'] = variable_get('library_quantity_display', 0) == 1;
+
+  $header[]['data'] = t('Title');
+  if ($results['display_categories']) {
+    $header[]['data'] = t('Categories');
+  }
+
+  if ($results['display_quantity']) {
+    $header[]['data'] = t('Quantity');
+  }
+  if ($results['display_status']) {
+    $header[]['data'] = t('Status');
+  }
+
+  $results['header'] = $header;
+
+  return $results;
+}
+
+function library_get_table_row($node, $var) {
+  $row = array();
+  $rows = array();
+
+  $row[] = l($node->title, 'node/' . $node->nid);
+  if ($var['display_categories']) {
+    $categories = array();
+
+    foreach (variable_get('library_taxonomy_display', array()) as $key => $vocab) {
+      if ($vocab) {
+        $terms =  taxonomy_node_get_terms_by_vocabulary($node, $key);
+        $cat_term = array();
+        foreach ($terms as $term) {
+          $cat_term[] = $term->name;
+        }
+        $cat_term = array_map('strtolower', $cat_term);
+        array_multisort($cat_term, SORT_ASC, $terms);
+
+        foreach ($terms as $term) {
+          $categories[] = l($term->name, 'taxonomy/term/' . $term->tid);
+        }
+      }
+    }
+    $row[] = implode(" | ", $categories);
+  }
+
+  if ($var['display_quantity']) {
+    $row[] = library_get_quantity($node);
+  }
+  //Replace with a function to find out if there is one available item
+  $item = library_get_status_item($node);
+  if ($item && $var['display_status']) {
+    $row[]['data'] = library_get_status_text($item);
+  }
+  $rows[] = $row;
+  return $rows;
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function library_views_api() {
+  return array(
+    'api' => 2.0,
+    'path' => drupal_get_path('module', 'library') . '/includes/views',
+  );
+}
+
+/**
+ * Implementation of hook_theme()
+ */
+function library_theme() {
+  return array(
+    'library_admin_new_action' => array(
+      'render element' => 'element',
+      'file' => 'library.theme.inc',
+    ),
+    'library_items' => array(
+      'variables' => array('items' => NULL),
+      'file' => 'library.theme.inc',
+    ),
+    'library_items_field' => array(
+      'render element' => 'form',
+      'file' => 'library.theme.inc',
+    ),
+  );
+}
+
+function library_get_quantity($node) {
+  if ($node->library_items) {
+    return count($node->library_items);
+  }
+  else {
+    return 0;
+  }
+}
+
+function library_get_status_item($node) {
+  if ($node->library_items) {
+    $unavailable = array();
+    $reference = array();
+    foreach ($node->library_items as $item) {
+      if ($item['in_circulation'] == LIBRARY_CIRCULATION && $item['library_status'] == LIBRARY_ITEM_AVAILABLE) {
+        return $item;
+      }
+      elseif ($item['in_circulation'] == LIBRARY_CIRCULATION && $item['library_status'] == LIBRARY_ITEM_UNAVAILABLE) {
+        if (!empty($item['last_due_date'])) {
+          $unavailable[$item['last_due_date']][] = $item;
+        }
+        else {
+          $unavailable[REQUEST_TIME][] = $item;
+        }
+      }
+      else {
+        $reference[] = $item;
+      }
+    }
+    if (!empty($reference)) {
+      return $reference[0];
+    }
+    elseif (!empty($unavailable)) {
+      foreach ($unavailable as $un_item) {
+        return $un_item[0];
+      }
+    }
+  }
+  return FALSE;
+}
+
+function _library_mail_text($key, $language = NULL, $variables = array()) {
+  $langcode = isset($language) ? $language->language : NULL;
+  if ($admin_setting = variable_get('library_mail_' . $key, FALSE)) {
+    // An admin setting overrides the default string.
+    return strtr($admin_setting, $variables);
+  }
+  else {
+    // No override, return default string.
+    switch ($key) {
+      case 'notify_overdue_subject':
+        return t('Overdue Items for !patronname at !site', $variables);
+      case 'notify_overdue_body':
+        return t("!patronname,\n\nThank you for using !site. You have one or more items that are overdue. You can find a list of overdue items below. \n\n!items\n\nPlease return these items as soon as possible. \n\nThank you!", $variables);
+    }
+  }
+}
+
+/**
+ * Get the text that corresponds to a given status
+ * @param $item
+ *   Array of values for a given library item
+ * @return
+ *   A string
+ */
+function library_get_status_text($item) {
+  if ($item['in_circulation'] == LIBRARY_REFERENCE_ONLY) {
+    $text = variable_get('library_reference_only_text', 'REFERENCE ONLY');
+  }
+  elseif ($item['library_status'] == LIBRARY_ITEM_AVAILABLE) {
+    $text = variable_get('library_available_text', 'AVAILABLE');
+  }
+  elseif ($item['library_status'] == LIBRARY_ITEM_UNAVAILABLE && !empty($item['last_due_date'])) {
+    $duedate = format_date($item['last_due_date'], 'short');
+    $text = 'DUE ' . $duedate;
+  }
+  else {
+    $text = variable_get('library_unavailable_noduedates_text', 'UNAVAILABLE');
+  }
+  return $text;
+}
+
+/**
+ * Retrieve a pipe delimited string of autocomplete suggestions for existing patron.
+ */
+function library_patron_autocomplete($string) {
+  $matches = array();
+  $result = NULL;
+  if (module_exists('profile')) {
+    $fids = array();
+    $fields = db_query("select fid, name from {profile_fields} where type = :type", array(':type' => 'textfield'));
+    foreach ($fields as $field) {
+      if (variable_get('library_profile_' . $field->name, 0) == 1) {
+        $fids[] = $field->fid;
+      }
+    }
+    if (!empty($fids)) {
+      $result = db_query_range("SELECT u.uid, CONCAT(pv.value,' (', u.name, ')') as name FROM {users} u JOIN (SELECT uid, GROUP_CONCAT(value SEPARATOR ', ' ) as value FROM {profile_values} WHERE fid IN (:fids) GROUP BY (uid)) AS pv ON u.uid = pv.uid WHERE u.name LIKE :string or pv.value LIKE :string)", 0, 10, array(':fids' => $fids, ':string' => '%' . db_like(check_plain($string . '')) . '%'));
+    }
+  }
+  if (empty($result)) {
+    $select = db_select('users','u')
+      ->fields('u',array('uid', 'name'))
+      ->condition('status', 1)
+      ->condition('name', '%' . db_like(check_plain($string . '')) . '%', 'LIKE')
+      ->orderBy('name')
+      ->range(0, 10);
+    $result = $select->execute()->fetchAllAssoc('uid');
+  }
+
+  foreach ($result as $patron) {
+    if (isset($patron->name) && isset($patron->uid)) {
+      $matches[$patron->name . ' [uid:' . $patron->uid . ']'] = check_plain($patron->name);
+    }
+  }
+
+  print drupal_json_encode($matches);
+  exit();
+}

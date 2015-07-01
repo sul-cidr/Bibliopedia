@@ -452,7 +452,8 @@ header {
   border-bottom: solid 1px #8ba393;
   padding-top: 2em;
   padding-bottom: 1.5em;
-  background-color: rgba(200, 200, 160, .5);
+  /*background-color: rgba(200, 200, 160, .5);*/
+  background-color: white;
 }
 
 img#logo {
@@ -492,8 +493,16 @@ header h2 {
   letter-spacing: 0;
 }
 
+span#title {
+}
+
 span#github small, span#github a, .fa-github {
   color: #415d6b;
+}
+
+span#github i.fa-github {
+  padding-left: 7px;
+  padding-right: 5px;
 }
 
 nav {
@@ -583,8 +592,8 @@ header a.button {
 }
 aside a.button {
   display: block;
-  width: 140px;
-  padding-left: 60px;
+  width: 130px;
+  padding-left: 70px;
   margin-bottom: 20px;
   font-size: 21px;
   border: 1px solid #8ba393;
@@ -682,8 +691,8 @@ form {
   font-size: 22px;
   font-weight: bold;
   color: #474747;
-  text-indent: 4px;
 }
+
 #main-content h2:before {
   padding-right: 0.3em;
   margin-left: -1.5em;
@@ -697,13 +706,10 @@ form {
   font-size: 18px;
   font-weight: bold;
   color: #474747;
-  text-indent: 3px;
 }
 
 #main-content h3:before {
   padding-right: 0.3em;
-  margin-left: -2em;
-  color: #9ddcff;
 }
 
 #main-content h4 {
@@ -711,14 +717,12 @@ form {
   font-family: 'Open Sans', 'Helvetica Neue', Helvetica, Arial, serif;
   font-size: 15px;
   font-weight: bold;
-  color: #474747;
-  text-indent: 3px;
+  color: #696969;
 }
 
 h4:before {
   padding-right: 0.3em;
-  margin-left: -2.8em;
-  color: #9ddcff;
+  content: '//';
 }
 
 #main-content h5 {
@@ -824,7 +828,7 @@ footer a:hover {
     width: 740px;
   }
   header h1, header h2 {
-    width: 340px;
+    width: 360px;
   }
   header h1 {
     font-size: 60px;

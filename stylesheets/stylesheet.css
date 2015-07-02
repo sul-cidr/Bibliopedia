@@ -927,8 +927,10 @@ footer a:hover {
     margin-left: 0;
     content: none;
   }
-  footer img {
+  div#footer img {
     max-width: 750px;
+    padding-bottom: 10px;
+    width: 90%;
   }
 }
 
@@ -937,8 +939,10 @@ footer a:hover {
 
 /* Mobile Portrait Size to Mobile Landscape Size (devices and browsers) */
 @media only screen and (max-width: 479px) {
-  footer img {
+  div#footer img {
     max-width: 450px;
+    padding-bottom: 10px;
+    width: 90%;
   }
 }
 

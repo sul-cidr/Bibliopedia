@@ -834,7 +834,7 @@ footer a:hover {
 
 /* Tablet Portrait size to standard 960 (devices and browsers) */
 @media only screen and (min-width: 768px) and (max-width: 959px) {
-  .inner {
+  .inner, footer {
     width: 740px;
   }
   header h1, header h2 {
@@ -939,6 +939,9 @@ footer a:hover {
 
 /* Mobile Portrait Size to Mobile Landscape Size (devices and browsers) */
 @media only screen and (max-width: 479px) {
+  footer {
+    width: 90%;
+  }
   div#footer img {
     max-width: 450px;
     padding-bottom: 10px;

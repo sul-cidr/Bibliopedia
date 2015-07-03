@@ -799,6 +799,7 @@ div#footer {
 
 div#footer img {
   padding-left: 10px;
+  max-height: 120px
 }
 
 h3#support {

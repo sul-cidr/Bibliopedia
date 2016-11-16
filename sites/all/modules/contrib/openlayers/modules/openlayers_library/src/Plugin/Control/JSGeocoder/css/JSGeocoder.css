@@ -1,0 +1,10 @@
+.ol-jsgeocoder.ol-control {
+  bottom: 3em;
+  right: .5em;
+}
+
+.ol-jsgeocoder.ol-control .ol-jsgeocoder-textinput {
+  font-weight: bold;
+  font-size: 1.5em;
+  background-color: rgba(255,255,255,0.2);
+}

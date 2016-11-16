@@ -1,0 +1,358 @@
+<?php
+/**
+ * @file
+ * Openlayers module.
+ */
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function openlayers_ctools_plugin_api($module, $api) {
+  return array(
+    'version' => 1,
+    'path' => drupal_get_path('module', 'openlayers') . '/includes',
+  );
+}
+
+/**
+ * Implements hook_permission().
+ */
+function openlayers_permission() {
+  return array(
+    'administer openlayers' => array(
+      'title' => t('Administer Openlayers'),
+      'description' => t('Configure Openlayers settings, styles, maps, and layers.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_element_info().
+ */
+function openlayers_element_info() {
+  return array(
+    'openlayers' => array(
+      '#input' => FALSE,
+      '#tree' => TRUE,
+      '#process' => array('openlayers_element_process_callback'),
+      '#pre_render' => array('openlayers_element_prerender_callback'),
+      '#theme_wrappers' => array('form_element'),
+    ),
+  );
+}
+
+/**
+ * Process callback for the openlayers form element.
+ *
+ * Renders the map and returns the markup in an renderable array.
+ */
+function openlayers_element_process_callback($element, $form_state, $complete_form) {
+  /* @var \Drupal\openlayers\Types\MapInterface $map */
+  if (($map = \Drupal\openlayers\Openlayers::load('Map', $element['#map'])) == TRUE) {
+    $element['map'] = $map->build();
+  }
+
+  return $element;
+}
+
+/**
+ * Pre render callback for the openlayers form element.
+ */
+function openlayers_element_prerender_callback($element) {
+  if (empty($element['map'])) {
+    /* @var \Drupal\openlayers\Types\Map $map */
+    if (($map = \Drupal\openlayers\Openlayers::load('Map', $element['#map'])) == TRUE) {
+      $element['map'] = $map->build();
+    }
+  }
+
+  return $element;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function openlayers_theme($existing, $type, $theme, $path) {
+  return array(
+    'openlayers' => array(
+      'path' => $path . '/theme',
+      'template' => 'openlayers',
+      'render element' => 'openlayers',
+      'file' => 'openlayers.theme.inc',
+    ),
+  );
+}
+
+/**
+ * Implements hook_i18n_string_info().
+ */
+function openlayers_i18n_string_info() {
+  $groups['openlayers'] = array(
+    'title' => t('Openlayers'),
+    'format' => TRUE,
+  );
+  return $groups;
+}
+
+/**
+ * Translate a string using i18n_string, if available.
+ *
+ * @param string $name
+ *   Textgroup and context glued with ':'.
+ * @param string $default
+ *   String in default language. Default language may or may not be English.
+ * @param array $options
+ *   An associative array of additional options, with the following keys:
+ *   - langcode: the language code to translate to a language other than what is
+ *     used to display the page; defaults to the current language
+ *   - filter: filtering callback to apply to the translated string only
+ *   - format: input format to apply to the translated string only
+ *   - callback: callback to apply to the result (both to the translated or
+ *     untranslated string)
+ *   - update: whether to update source table; defaults to FALSE
+ *   - translate: whether to return a translation; defaults to TRUE.
+ *
+ * @return string
+ *   The translated string if i18n_string is available, the original otherwise.
+ *
+ * @see i18n_string()
+ */
+function openlayers_i18n_string($name, $default, $options = array()) {
+  if (module_exists('i18n_string')) {
+    $result = i18n_string($name, $default, $options);
+  }
+  else {
+    $result = $default;
+    $options += array(
+      'format' => NULL,
+      'sanitize' => FALSE,
+    );
+    if ($options['sanitize']) {
+      $result = check_markup($result, $options['format']);
+    }
+  }
+
+  return $result;
+}
+
+/**
+ * Wrapper to update / create translation source for user defined strings.
+ *
+ * Wrapper around i18n_string_update() that ensures the module is available.
+ *
+ * @param string|array $name
+ *   Array or string concatenated with ':' that contains textgroup and string
+ *   context.
+ * @param string $string
+ *   Source string in default language. Default language may or may not be
+ *   English. Array of key => string to update multiple strings at once.
+ * @param array $options
+ *   Array with additional options:
+ *   - 'format', String format if the string has text format
+ *   - 'messages', Whether to print out status messages.
+ *
+ * @return mixed
+ *   Same return as from i18n_string_update()
+ *
+ * @see i18n_string_update()
+ */
+function openlayers_i18n_string_update($name, $string, $options = array()) {
+  if (module_exists('i18n_string')) {
+    return i18n_string_update($name, $string, $options);
+  }
+}
+
+/**
+ * Wrapper to remove source and translations for user defined string.
+ *
+ * Though for most strings the 'name' or 'string id' uniquely identifies that
+ * string, there are some exceptions (like profile categories) for which we need
+ * to use the source string itself as a search key.
+ *
+ * @param string $name
+ *   String name.
+ * @param string $string
+ *   Optional source string (string in default language).
+ * @param array $options
+ *   Array of string properties to remove.
+ *
+ * @return mixed
+ *   Same return as from i18n_string_remove()
+ *
+ * @see i18n_string_remove()
+ */
+function openlayers_i18n_string_remove($name, $string = NULL, $options = array()) {
+  if (module_exists('i18n_string')) {
+    return i18n_string_remove($name, $string, $options);
+  }
+}
+
+/**
+ * Implements hook_i18n_string_refresh().
+ */
+function openlayers_i18n_string_refresh() {
+  foreach (\Drupal\openlayers\Openlayers::getPluginTypes() as $type) {
+    foreach (\Drupal\openlayers\Openlayers::loadAllExportable($type) as $exportable) {
+      $object = \Drupal\openlayers\Openlayers::load($type, $exportable);
+      $object->i18nStringsRefresh();
+    }
+  }
+}
+
+/**
+ * Implements hook_libraries_info().
+ */
+function openlayers_libraries_info() {
+  // During an upgrade from Openlayers 7.x-2.x branch, the new registry_autoload
+  // dependency may not be enabled, which makes it impossible to use the new
+  // namespaced classes. So provide a fallback variable instead.
+  $js_css_group = 'openlayers';
+  if (class_exists('\Drupal\openlayers\Config')) {
+    $js_css_group = \Drupal\openlayers\Config::get('openlayers.js_css.group');
+  }
+
+  $info = system_get_info('module', 'openlayers');
+  $version = $info['version'] ? $info['version'] : '7.x-3.x';
+  $module_path = drupal_get_path('module', 'openlayers');
+
+  $libraries['openlayers3_integration'] = array(
+    'name' => 'Openlayers 3 Drupal integration files',
+    'vendor url' => 'https://drupal.org/project/openlayers',
+    'download url' => 'https://drupal.org/project/openlayers',
+    'version' => $version,
+    'library path' => $module_path,
+    'files' => array(
+      'js' => array(
+        $module_path . '/js/openlayers.js' => array(
+          'data' => $module_path . '/js/openlayers.js',
+          'type' => 'file',
+          'weight' => 8,
+          'group' => $js_css_group,
+        ),
+        $module_path . '/js/openlayers.pluginManager.js' => array(
+          'data' => $module_path . '/js/openlayers.pluginManager.js',
+          'type' => 'file',
+          'weight' => 12,
+          'group' => $js_css_group,
+        ),
+        $module_path . '/js/openlayers.behaviors.js' => array(
+          'data' => $module_path . '/js/openlayers.behaviors.js',
+          'type' => 'file',
+          'weight' => 14,
+          'group' => $js_css_group,
+        ),
+      ),
+      'css' => array(
+        $module_path . '/css/openlayers.css' => array(
+          'data' => $module_path . '/css/openlayers.css',
+          'type' => 'file',
+          'weight' => 4,
+          'group' => $js_css_group,
+        ),
+      ),
+    ),
+    'variants' => array(
+      'debug' => array(
+        'files' => array(
+          'js' => array(
+            'js/openlayers.js' => array(
+              'type' => 'file',
+              'weight' => 8,
+              'group' => $js_css_group,
+            ),
+            'js/openlayers.pluginManager.js' => array(
+              'type' => 'file',
+              'weight' => 12,
+              'group' => $js_css_group,
+            ),
+            'js/openlayers.behaviors.js' => array(
+              'type' => 'file',
+              'weight' => 14,
+              'group' => $js_css_group,
+            ),
+            'js/openlayers.console.js' => array(
+              'type' => 'file',
+              'weight' => 16,
+              'group' => $js_css_group,
+            ),
+            'js/openlayers.debug.js' => array(
+              'type' => 'file',
+              'weight' => 18,
+              'group' => $js_css_group,
+            ),
+          ),
+          'css' => array(
+            'css/openlayers.css' => array(
+              'type' => 'file',
+              'weight' => 4,
+              'group' => $js_css_group,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  $libraries['openlayers3'] = array(
+    'name' => 'Openlayers 3',
+    'vendor url' => 'http://openlayers.org/',
+    'download url' => 'https://github.com/openlayers/ol3/releases/download/v3.11.2/v3.11.2.zip',
+    'version callback' => array('\Drupal\openlayers\Openlayers', 'getLibraryVersion'),
+    'version arguments' => array(),
+    'library path' => $module_path,
+    // This is taken in account if the module libraries_cdn is enabled.
+    'cdn' => array(
+      'aliases' => array('ol3'),
+      'options' => array(
+        'weight' => 0,
+        'group' => $js_css_group,
+      ),
+      'request' => array(
+        // Maximum 10 seconds for the http requests to CDNs.
+        'timeout' => 10,
+      ),
+    ),
+    'variants' => array(),
+    'dependencies' => array(
+      'openlayers3_integration',
+    ),
+  );
+
+
+  if ($version = \Drupal\openlayers\Openlayers::getLocalLibraryVersion()) {
+    unset($libraries['openlayers3']['library path']);
+    $libraries['openlayers3']['variants']['local:' . $version] = array(
+      'name' => 'Openlayers ' . $version,
+      'files' => array(
+        'js' => array(
+          'build/ol.js' => array(
+            'type' => 'file',
+            'weight' => 6,
+            'group' => $js_css_group,
+          ),
+        ),
+        'css' => array(
+          'css/ol.css' => array(
+            'type' => 'file',
+            'weight' => 4,
+            'group' => $js_css_group,
+          ),
+        ),
+      ),
+    );
+  }
+
+  return $libraries;
+}
+
+/**
+ * Implements hook_hook_info().
+ */
+function openlayers_hook_info() {
+  $hooks = array(
+    'openlayers_object_preprocess_alter',
+    'openlayers_object_postprocess_alter',
+  );
+
+  return array_fill_keys($hooks, array('group' => 'openlayers'));
+}

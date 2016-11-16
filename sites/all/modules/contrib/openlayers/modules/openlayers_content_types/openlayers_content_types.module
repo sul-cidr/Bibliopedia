@@ -1,0 +1,27 @@
+<?php
+/**
+ * @file
+ * Openlayers CTools Content Types Integration module.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function openlayers_content_types_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'ctools' && $plugin_type == 'content_types') {
+    return 'plugins/' . $plugin_type;
+  }
+}
+
+/**
+ * Implements hook_get_pane_links_alter().
+ */
+function openlayers_content_types_get_pane_links_alter(&$links, $pane, $content_type) {
+  if ($pane->type === 'openlayers' && !empty($pane->configuration['map'])) {
+    $destination = array('destination' => current_path());
+    $links['top'][] = array(
+      'title' => t('Edit map'),
+      'href' => url('admin/structure/openlayers/maps/list/' . $pane->configuration['map'] . '/edit', array('query' => $destination, 'absolute' => TRUE)),
+    );
+  }
+}

@@ -1,0 +1,85 @@
+<?php
+/**
+ * @file
+ * Openlayers Block module.
+ */
+
+/**
+ * Implements hook_block_info().
+ */
+function openlayers_block_block_info() {
+  $blocks = array();
+
+  foreach (\Drupal\openlayers\Openlayers::loadAll('Map') as $map) {
+    if (is_object($map) && $map->getOption('provideBlock', FALSE)) {
+      $key = _openlayers_block_get_block_id($map->getMachineName());
+      $blocks[$key]['info'] = t('Openlayers block for @map_name', array('@map_name' => $map->getName()));
+    }
+  }
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function openlayers_block_block_view($delta = '') {
+  $block = array();
+
+  if ($map = _openlayers_block_get_map($delta)) {
+    $block['subject'] = $map->getName();
+    $block['content'] = array(
+      '#type' => 'openlayers',
+      '#map' => $map,
+    );
+  }
+
+  return $block;
+}
+
+/**
+ * Helper function that returns the blocks delta according to the map_name.
+ *
+ * @param string $map_machine_name
+ *   The name of the map.
+ *
+ * @return string
+ *   The block delta.
+ */
+function _openlayers_block_get_block_id($map_machine_name) {
+  return substr(sha1($map_machine_name), 0, -32) . '_mapblock';
+}
+
+/**
+ * Helper function return the map name according to the block delta.
+ *
+ * @param string $delta
+ *   The block delta.
+ *
+ * @return \Drupal\openlayers\Types\MapInterface
+ *   The map object.
+ */
+function _openlayers_block_get_map($delta) {
+  foreach (\Drupal\openlayers\Openlayers::loadAll('Map') as $map) {
+    if (is_object($map) && _openlayers_block_get_block_id($map->getMachineName()) == $delta && $map->getOption('provideBlock', FALSE)) {
+      return $map;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function openlayers_block_form_openlayers_map_form_settings_alter(&$form, &$form_state) {
+  if (($map = \Drupal\openlayers\Openlayers::load('Map', $form_state['item'])) == TRUE) {
+    $form['options']['ui']['provideBlock'] = array(
+      '#type' => 'checkbox',
+      '#title' => 'Provide a Drupal block for this map ?',
+      '#description' => t('Enable this to provide a Drupal block for this map.'),
+      '#default_value' => $map->getOption('provideBlock', FALSE),
+      '#parents' => array('options', 'provideBlock'),
+    );
+  }
+}

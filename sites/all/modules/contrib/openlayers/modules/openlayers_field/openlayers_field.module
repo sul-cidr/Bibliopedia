@@ -1,0 +1,323 @@
+<?php
+/**
+ * @file
+ * Openlayers field module.
+ */
+
+/**
+ * Implements hook_field_info().
+ */
+function openlayers_field_field_info() {
+  return array(
+    'openlayers_map' => array(
+      'label' => t('Openlayers map'),
+      'description' => t('Display a map.'),
+      'default_widget' => 'openlayers_map_widget',
+      'default_formatter' => 'openlayers_map_formatter',
+      'instance_settings' => array(
+        'force_default' => FALSE,
+        'allowed_maps' => array(),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function openlayers_field_field_instance_settings_form($field, $instance) {
+  $form['force_default'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Always use default value'),
+    '#default_value' => $instance['settings']['force_default'],
+    '#description' => t('Hides this field in forms and enforces the configured default value.'),
+  );
+  $form['allowed_maps'] = array(
+    '#title' => 'Allowed maps',
+    '#description' => 'Only selected maps will be available for authors. Leave empty to allow all.',
+    '#type' => 'checkboxes',
+    '#default_value' => array_filter($instance['settings']['allowed_maps']),
+    '#options' => \Drupal\openlayers\Openlayers::loadAllAsOptions('map'),
+  );
+  return $form;
+}
+
+/**
+ * Implements hook_field_is_empty().
+ */
+function openlayers_field_field_is_empty($item, $field) {
+  return empty($item['value']);
+}
+
+/**
+ * Implements hook_field_presave().
+ */
+function openlayers_field_field_presave($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  foreach ($items as $delta => $item) {
+    if (empty($item['value'])) {
+      unset($items[$delta]);
+    }
+  }
+}
+
+/**
+ * Implements hook_field_prepare_view().
+ */
+function openlayers_field_field_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items) {
+  foreach ($items as $entity_id => &$instance_items) {
+    if ($instances[$entity_id]['settings']['force_default']) {
+      $instance_items = $instances[$entity_id]['default_value'];
+    }
+  }
+}
+
+/**
+ * Implements hook_field_formatter_info().
+ */
+function openlayers_field_field_formatter_info() {
+  return array(
+    'openlayers_map_formatter' => array(
+      'label' => t('Openlayers map'),
+      'field types' => array('openlayers_map'),
+    ),
+    'openlayers_addressfield_textfield_formatter' => array(
+      'label' => t('Openlayers map (geocoded field)'),
+      'field types' => array('addressfield', 'text'),
+      'settings'  => array(
+        'map_layer' => '',
+        'geocoder_handler' => 'google',
+        'geocoder_cache' => '',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function openlayers_field_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+  $element = array();
+
+  switch ($display['type']) {
+    case 'openlayers_map_formatter':
+      break;
+
+    case 'openlayers_addressfield_textfield_formatter':
+
+      $options = array();
+      /** @var \Drupal\openlayers\Types\MapInterface $map */
+      foreach (\Drupal\openlayers\Openlayers::loadAll('map') as $map) {
+        /** @var \Drupal\openlayers\Types\LayerInterface $layer */
+        foreach ($map->getCollection()->getObjects('layer') as $layer) {
+          if ($source = $layer->getSource()) {
+            if ('openlayers.Source:Field' == $source->getFactoryService()) {
+              $key = $map->getMachineName() . ':' . $layer->getMachineName();
+              $value = sprintf("%s: %s (%s)", $map->getName(), $layer->getName(), $layer->getMachineName());
+              $options[$map->getName()][$key] = $value;
+            }
+          }
+        }
+      }
+
+      $element['map_layer'] = array(
+        '#type' => 'select',
+        '#title' => 'Base map to use and vector layer to fill with the features',
+        '#description' => 'You may choose only vector layer having a Field type source',
+        '#options' => $options,
+        '#default_value' => $settings['map_layer'],
+        '#required' => TRUE,
+      );
+
+      $geocoder_handlers = array();
+      foreach (geocoder_handler_info() as $name => $handler) {
+        $geocoder_handlers[$name] = $handler['title'];
+      }
+
+      $element['geocoder_handler'] = array(
+        '#type' => 'select',
+        '#title' => t('Geocoder handler'),
+        '#options' => $geocoder_handlers,
+        '#default_value' => $settings['geocoder_handler'],
+      );
+
+      $element['geocoder_cache'] = array(
+        '#type' => 'select',
+        '#title' => t('Geocoder cache type'),
+        '#description' => t('Type of geocoder cache to use'),
+        '#options' => array(
+          0 => t('No caching'),
+          1 => t('Static-cache but no persistent-cache'),
+          2 => t('Both static-cache and persistent-cache'),
+        ),
+        '#default_value' => $settings['geocoder_cache'],
+      );
+      break;
+  }
+
+  return $element;
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function openlayers_field_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+  $summary = array();
+
+  switch ($display['type']) {
+    case 'openlayers_map_formatter':
+      break;
+
+    case 'openlayers_addressfield_textfield_formatter':
+      $geocoder_cache = 'Not defined.';
+      switch ($settings['geocoder_cache']) {
+        case 0:
+          $geocoder_cache = 'No cache';
+          break;
+
+        case 1:
+          $geocoder_cache = 'Static cache only';
+          break;
+
+        case 2:
+          $geocoder_cache = 'Static and persistent cache';
+          break;
+      }
+
+      list($map, $layer) = explode(':', $settings['map_layer'], 2);
+
+      $summary[] = t('Openlayers map: @map', array(
+        '@map' => $map,
+      ));
+      $summary[] = t('Openlayers layer: @layer', array(
+        '@layer' => $layer,
+      ));
+      $summary[] = t('Geocoder handler: @geocoder_handler', array(
+        '@geocoder_handler' => $settings['geocoder_handler'],
+      ));
+      $summary[] = t('Geooder cache: @geocoder_cache', array(
+        '@geocoder_cache' => $geocoder_cache,
+      ));
+
+      break;
+  }
+
+  return implode('<br/>', $summary);
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function openlayers_field_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+  $settings = $display['settings'];
+
+  switch ($display['type']) {
+    // Render a simple map.
+    case 'openlayers_map_formatter':
+      foreach ($items as $delta => $item) {
+        $element[$delta] = array(
+          '#type' => 'openlayers',
+          '#map' => $item['value'],
+        );
+      }
+      break;
+
+    // Render an addressfield or a textield.
+    case 'openlayers_addressfield_textfield_formatter':
+      $fields = array();
+
+      foreach ($items as $delta => $item) {
+        // If item is an array without a 'value' key (ex: addressfield),
+        // we convert it to string, else we take the 'safe_value' of the field.
+        if (is_array($item) && !isset($item['value'])) {
+          $item = implode(' ', $item);
+        }
+        else {
+          $item = $item['safe_value'];
+        }
+
+        $fields[] = array(
+          'address' => $item,
+          'title' => entity_label($entity_type, $entity),
+          'description' => $item,
+        );
+      }
+
+      list($map, $layer) = explode(':', $settings['map_layer'], 2);
+
+      /** @var \Drupal\openlayers\Types\MapInterface $map */
+      $map = \Drupal\openlayers\Openlayers::load('map', $map);
+
+      /** @var \Drupal\openlayers\Types\LayerInterface $layer */
+      if ($layer = $map->getCollection()->getObjectById('layer', $layer)) {
+        if ($source = $layer->getSource()) {
+          $source->setOption('geocoder_handler', $settings['geocoder_handler']);
+          $source->setOption('geocoder_cache', $settings['geocoder_cache']);
+          $source->setOption('fields', $fields);
+        }
+      }
+
+      $element[0] = array(
+        '#type' => 'openlayers',
+        '#map' => $map,
+      );
+
+      break;
+  }
+
+  return $element;
+}
+
+/**
+ * Implements hook_field_widget_info().
+ */
+function openlayers_field_field_widget_info() {
+  return array(
+    'openlayers_map_widget' => array(
+      'label' => t('Simple map select'),
+      'field types' => array('openlayers_map'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function openlayers_field_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+  $allowed_maps = array_filter($instance['settings']['allowed_maps']);
+  $widget = array();
+  $options = array();
+
+  foreach ($allowed_maps as $machine_name) {
+    $map = \Drupal\openlayers\Openlayers::load('map', $machine_name);
+    $options[$machine_name] = $map->getMachineName();
+  }
+
+  if (empty($options)) {
+    $options = \Drupal\openlayers\Openlayers::loadAllAsOptions('map');
+  }
+
+  if (isset($form['#type']) && $form['#type'] == 'fieldset') {
+    $instance['settings']['force_default'] = FALSE;
+  }
+
+  switch ($instance['widget']['type']) {
+    case 'openlayers_map_widget':
+      $widget = array(
+        '#type' => 'select',
+        '#title' => 'Openlayers map',
+        '#required' => $element['#required'],
+        '#empty_value' => 0,
+        '#options' => $options,
+        '#default_value' => isset($items[$delta]['value']) ? $items[$delta]['value'] : NULL,
+        '#description' => 'Select the map to display',
+        '#access' => !$instance['settings']['force_default'],
+      );
+  }
+
+  return array('value' => $widget);
+}

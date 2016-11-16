@@ -1,0 +1,36 @@
+/* Geofield control positioning */
+.ol-geofield.ol-control {
+  position: absolute;
+  bottom: 1em;
+  text-align: center;
+  width: 100%;
+}
+.ol-control .ol-geofield-controls {
+  display: inline-block;
+}
+.ol-control .ol-geofield-controls .ol-control-group {
+  position: relative;
+  float: left;
+  margin: 0 0 0.5em 1em;
+}
+.ol-control .ol-geofield-controls button {
+  display: inline-block;
+}
+/* Geofield enabled button style. */
+.ol-control .ol-geofield-controls button.enable {
+  text-decoration: none;
+  background-color: #4c6079;
+  background-color: rgba(0,60,136,0.7);
+}
+/* Geofield .ol-control background overrides. */
+.ol-geofield.ol-control {
+  background: none;
+}
+.ol-geofield.ol-control:hover {
+  background: none;
+}
+.ol-control .ol-geofield-controls .ol-control-group {
+  background-color: rgba(255,255,255,0.4);
+  border-radius: 4px;
+  padding: 2px;
+}

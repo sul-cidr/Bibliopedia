@@ -1,0 +1,15 @@
+/* @TODO However effect or tooltip?*/
+.ol-dev-dialog .description {
+  display:none;
+}
+
+.ol-dev-dialog input,
+.ol-dev-dialog textarea,
+.ol-dev-dialog select {
+  width: 100%;
+}
+
+.ol-dev-dialog input.form-checkbox,
+.ol-dev-dialog input.form-radio {
+  width: auto;
+}

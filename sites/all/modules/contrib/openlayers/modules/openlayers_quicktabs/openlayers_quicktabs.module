@@ -1,0 +1,20 @@
+<?php
+/**
+ * @file
+ * Openlayers Quicktabs Integration module.
+ */
+
+/**
+ * Implements hook_quicktabs_contents().
+ */
+function openlayers_quicktabs_quicktabs_contents() {
+  $info = array();
+  $info['Openlayers-map'] = array(
+    'path' => drupal_get_path('module', 'openlayers_quicktabs') . '/plugins/quicktabs',
+    'handler' => array(
+      'file' => 'OpenlayersMap.php',
+      'class' => 'OpenlayersMap',
+    ),
+  );
+  return $info;
+}

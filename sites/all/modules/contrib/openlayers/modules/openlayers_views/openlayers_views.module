@@ -1,0 +1,84 @@
+<?php
+/**
+ * @file
+ * Openlayers views integration.
+ */
+
+/**
+ * Implements hook_views_api().
+ */
+function openlayers_views_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'openlayers_views') . '/views',
+  );
+}
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function openlayers_views_ctools_plugin_api($module, $api) {
+  return array(
+    'version' => 1,
+    'path' => drupal_get_path('module', 'openlayers_views') . '/includes',
+  );
+}
+
+/**
+ * Return all views compatible with this module.
+ *
+ * Uses static caching.
+ *
+ * @param bool $reset
+ *   Resets the static cache.
+ *
+ * @return array
+ *   List of views id and display names.
+ */
+function openalyers_views_get_views($reset = FALSE) {
+  $cache = &drupal_static(__FUNCTION__, NULL);
+  // If cache isn't set yet or the cache has to be reset iterate over all views.
+  if (!isset($cache) || $reset) {
+    $cache = array();
+    /** @var view $view */
+    foreach (views_get_all_views() as $view) {
+      foreach ($view->display as $display => $data) {
+        if ($display != 'default') {
+          $view->set_display($display);
+          if ($view->display_handler->get_option('style_plugin') == 'openlayers_source_vector') {
+            $cache[] = array(
+              'openlayers_source_vector',
+              $view,
+              $display,
+            );
+          }
+          if ($view->display_handler->get_option('style_plugin') == 'openlayers_map_views') {
+            $cache[] = array(
+              'openlayers_map_views',
+              $view,
+              $display,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return $cache;
+}
+
+/**
+ * Implements hook_views_invalidate_cache().
+ */
+function openlayers_views_views_invalidate_cache() {
+  // If this hook is fired we've to assume that a openlayers related view was
+  // adjusted and thus we need to flush the openlayers plugin cache. This seems
+  // the only way to get notified about CRUD events of views.
+  cache_clear_all('views_view', 'cache', TRUE);
+  cache_clear_all('ctools_export_index:openlayers_maps', 'cache', TRUE);
+  cache_clear_all('ctools_export_index:openlayers_sources', 'cache', TRUE);
+  cache_clear_all('ctools_export_index:openlayers_layers', 'cache', TRUE);
+  cache_clear_all('ctools_export:openlayers_maps:*', 'cache', TRUE);
+  cache_clear_all('ctools_export:openlayers_sources:*', 'cache', TRUE);
+  cache_clear_all('ctools_export:openlayers_layers:*', 'cache', TRUE);
+}

@@ -1,0 +1,21 @@
+name = Openlayers Views
+description = Openlayers module for Views
+core = 7.x
+package = "Openlayers"
+
+dependencies[] = views
+dependencies[] = openlayers
+dependencies[] = geophp
+
+files[] = views/openlayers_views_plugin_style_source_vector.inc
+files[] = views/openlayers_views_plugin_display_openlayers.inc
+files[] = views/openlayers_views_plugin_map_views.inc
+
+registry_autoload[] = PSR-4
+
+; Information added by Drupal.org packaging script on 2016-01-03
+version = "7.x-3.1"
+core = "7.x"
+project = "openlayers"
+datestamp = "1451782149"
+

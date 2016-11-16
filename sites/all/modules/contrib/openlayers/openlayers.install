@@ -1,0 +1,615 @@
+<?php
+/**
+ * @file
+ * Openlayers module - installation procedure.
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function openlayers_uninstall() {
+  // Get module variables.
+  global $conf;
+  foreach (array_keys($conf) as $key) {
+    // Find variables that have the module prefix.
+    if (strpos($key, 'openlayers_') === 0) {
+      variable_del($key);
+    }
+  }
+}
+
+/**
+ * Implements hook_schema().
+ */
+function openlayers_schema() {
+  $schema = array();
+  // Maps table (ctools extras).
+  $schema['openlayers_maps'] = array(
+    'description' => 'Storage for User defined Openlayers maps.',
+    'export' => array(
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_map',
+      'default hook' => 'default_openlayers_maps',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_maps',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'description' => 'The primary identifier for the map.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'name' => array(
+        'description' => 'The title of the map.',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+      'description' => array(
+        'description' => 'The description of the map.',
+        'type' => 'text',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Map service.',
+      ),
+      'options' => array(
+        'description' => 'The serialized map.',
+        'type' => 'text',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Layers table (ctools extras).
+  $schema['openlayers_layers'] = array(
+    'description' => 'Storage for user defined Openlayers layers.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_layer',
+      'default hook' => 'default_openlayers_layers',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_layers',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Layer system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Layer name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Layer description.',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Layer service.',
+      ),
+      'options' => array(
+        'type' => 'text',
+        'description' => 'Layer options serialized.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Sources table (ctools extras).
+  $schema['openlayers_sources'] = array(
+    'description' => 'Storage for user defined Openlayers sources.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_source',
+      'default hook' => 'default_openlayers_sources',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_sources',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Source system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Source name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Source description.',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Service class.',
+      ),
+      'options' => array(
+        'type' => 'text',
+        'description' => 'Source options serialized.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Controls table.
+  $schema['openlayers_controls'] = array(
+    'description' => 'Storage for user defined Openlayers controls.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_control',
+      'default hook' => 'default_openlayers_controls',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_controls',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Control system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Control name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Control description.',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Control service.',
+      ),
+      'options' => array(
+        'type' => 'text',
+        'description' => 'Control options serialized.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Interactions table.
+  $schema['openlayers_interactions'] = array(
+    'description' => 'Storage for user defined Openlayers interactions.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_interaction',
+      'default hook' => 'default_openlayers_interactions',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_interactions',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Interaction system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Interaction name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Interaction description.',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Interaction service.',
+      ),
+      'options' => array(
+        'type' => 'text',
+        'description' => 'Interaction options serialized.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Components table.
+  $schema['openlayers_components'] = array(
+    'description' => 'Storage for user defined Openlayers components.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_component',
+      'default hook' => 'default_openlayers_components',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_components',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Component system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Component name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Component description.',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Component service.',
+      ),
+      'options' => array(
+        'type' => 'text',
+        'description' => 'Component options serialized.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Projections table.
+  $schema['openlayers_projections'] = array(
+    'description' => 'Storage for user defined Openlayers projections.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_projection',
+      'default hook' => 'default_openlayers_projections',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_projections',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Projection system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Projection name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Projection description.',
+      ),
+      'definition' => array(
+        'type' => 'text',
+        'description' => 'Projection options definition.',
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  // Styles table.
+  $schema['openlayers_styles'] = array(
+    'description' => 'Storage for user defined Openlayers styles.',
+    'export' => array(
+      'admin_title' => 'machine_name',
+      'key' => 'machine_name',
+      'key name' => 'Machine name',
+      'primary key' => 'machine_name',
+      'identifier' => 'ol_style',
+      'default hook' => 'default_openlayers_styles',
+      'cache defaults' => TRUE,
+      'api' => array(
+        'owner' => 'openlayers',
+        'api' => 'default_openlayers_styles',
+        'minimum_version' => 1,
+        'current_version' => 1,
+      ),
+    ),
+    'fields' => array(
+      'machine_name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Style system name.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Style name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'description' => 'Style description.',
+      ),
+      'factory_service' => array(
+        'type' => 'text',
+        'description' => 'Style service.',
+      ),
+      'options' => array(
+        'type' => 'text',
+        'description' => 'Style options serialized.',
+        'serialize' => TRUE,
+      ),
+    ),
+    'primary key' => array('machine_name'),
+    'unique keys' => array(
+      'machine_name' => array('machine_name'),
+    ),
+  );
+  return $schema;
+}
+
+/**
+ * Implements hook__requirements().
+ */
+function openlayers_requirements($phase) {
+  $requirements = array();
+  $t = get_t();
+
+  if ($phase != 'install') {
+    if (($library = libraries_detect('openlayers3')) && !empty($library['installed'])) {
+      $requirements['openlayers3'] = array(
+        'title' => $t('Openlayers'),
+        'severity' => REQUIREMENT_OK,
+        'value' => $t('Openlayers %version installed at %path', array('%path' => $library['library path'], '%version' => $library['version'])),
+      );
+    }
+    else {
+      $requirements['openlayers3'] = array(
+        'title' => $t('Openlayers'),
+        'severity' => REQUIREMENT_ERROR,
+        'value' => $t('Openlayers library was not found. To install it, <a href="@url">download it manually</a> or use <em>drush dl-openlayers</em>. The library directory must be named <em>openlayers3</em> to be recognized by this module.', array('@url' => $library['download url'])),
+      );
+    }
+  }
+
+  return $requirements;
+}
+
+/**
+ * Update to the 3.x version.
+ */
+function openlayers_update_7350() {
+
+  // Enable new dependencies.
+  $dependencies = array(
+    'registry_autoload',
+    'service_container',
+  );
+  foreach ($dependencies as $module) {
+    if (!module_exists($module)) {
+      $enabled = module_enable(array($module));
+      if (!$enabled) {
+        throw new DrupalUpdateException('Could not enable ' . $module . ' module. Make sure it exists and try again.');
+      }
+    }
+  }
+
+  // Ensure update 7201 is done.
+  if (db_table_exists('openlayers_map_presets')) {
+    // Change table name.
+    db_rename_table('openlayers_map_presets', 'openlayers_maps');
+    // Set default map variable.
+    variable_set('openlayers_default_map', variable_get('openlayers_default_preset', 'default'));
+    variable_del('openlayers_default_preset');
+  }
+
+  $schema = openlayers_schema();
+  // Create missing tables.
+  foreach ($schema as $table => $table_schema) {
+    if (!db_table_exists($table)) {
+      db_create_table($table, $table_schema);
+    }
+  }
+  // Add the machine name column - and deal with the title column.
+  foreach ($schema as $table => $table_schema) {
+    if (isset($table_schema['fields']['machine_name']) && db_field_exists($table, 'name') && !db_field_exists($table, 'machine_name')) {
+      // Add field and index.
+      db_add_field($table, 'machine_name', $table_schema['fields']['machine_name'], array('machine_name' => array('machine_name')));
+      db_query('UPDATE {' . $table . '} SET machine_name = LOWER(name);');
+      db_drop_primary_key($table);
+      db_add_primary_key($table, array('machine_name'));
+      db_drop_index($table, 'name');
+
+      // If there's a title field this is the new content for name.
+      if (db_field_exists($table, 'title')) {
+        db_query('UPDATE {' . $table . '} SET name = title;');
+        db_drop_field($table, 'title');
+      }
+    }
+    // If there's a data field but none is defined in the schema drop it.
+    // @TODO This leads to data loss! Can we do anything better?
+    if (!isset($table_schema['data']) && db_field_exists($table, 'data')) {
+      db_drop_field($table, 'data');
+    }
+  }
+  // Create missing columns.
+  foreach ($schema as $table => $table_schema) {
+    foreach (array_keys($table_schema['fields']) as $field) {
+      if (!db_field_exists($table, $field)) {
+        db_add_field($table, $field, $table_schema['fields'][$field]);
+      }
+    }
+  }
+  // Drop extra projection columns.
+  // @TODO This ALSO leads to data loss! Can we do anything better?
+  $old_projection_columns = array(
+    'identifier',
+    'authority',
+    'code',
+    'definition',
+    'projectedextentleft',
+    'projectedextentbottom',
+    'projectedextentright',
+    'projectedextenttop',
+  );
+  foreach ($old_projection_columns as $column) {
+    if (db_field_exists('openlayers_projections', $column)) {
+      db_drop_field('openlayers_projections', $column);
+    }
+  }
+  // Truncate the styles table to remove old OL 2.x styles.
+  // @TODO Yes... more data loss...
+  db_query('TRUNCATE {openlayers_styles}');
+}
+
+/**
+ * Update factory_service property of each OL objects.
+ */
+function openlayers_update_7360() {
+  $tables = openlayers_schema();
+  foreach ($tables as $table => $table_data) {
+    if (!isset($table_data['fields']['factory_service'])) {
+      continue;
+    }
+
+    $plugin_type = array_pop(explode('_', $table_data['export']['identifier']));
+    $fs_before = 'openlayers.' . $plugin_type . '.';
+    $fs_after = 'openlayers.' . drupal_ucfirst($plugin_type) . '.';
+
+    db_update($table)
+      ->expression('factory_service', 'REPLACE(factory_service, :before, :after)', array(':before' => $fs_before, ':after' => $fs_after))
+      ->execute();
+  }
+}
+
+/**
+ * Update factory_service property of each OL objects to remove '.internal.'.
+ */
+function openlayers_update_7370() {
+  $tables = openlayers_schema();
+  foreach ($tables as $table => $table_data) {
+    if (!isset($table_data['fields']['factory_service'])) {
+      continue;
+    }
+
+    $fs_before = '.internal.';
+    $fs_after = ':';
+
+    db_update($table)
+      ->expression('factory_service', 'REPLACE(factory_service, :before, :after)', array(':before' => $fs_before, ':after' => $fs_after))
+      ->execute();
+  }
+}
+
+/**
+ * Make sure that the submodule service_container_symfony from
+ * module service_container is properly enabled.
+ */
+function openlayers_update_7380() {
+  if (!module_exists('service_container_symfony')) {
+    $enabled = module_enable(array('service_container_symfony'));
+    if (!$enabled) {
+      throw new DrupalUpdateException('Unable to enable the module service_container_symfony from service_container.');
+    }
+  }
+}
+
+/**
+ * Make sure that the submodule service_container_annotation_discovery
+ * from module service_container is properly enabled.
+ */
+function openlayers_update_7390() {
+  if (!module_exists('service_container_annotation_discovery')) {
+    $enabled = module_enable(array('service_container_annotation_discovery'));
+    if (!$enabled) {
+      throw new DrupalUpdateException('Unable to enable the module service_container_annotation_discovery from service_container.');
+    }
+  }
+}

@@ -1,0 +1,14 @@
+.ol-export.ol-control {
+  right: 3em;
+  top: .5em;
+}
+
+.ol-export.ol-control button {
+  display: inline-block;
+}
+
+.ol-export.ol-control button.enable {
+  text-decoration: none;
+  background-color: #4c6079;
+  background-color: rgba(0,60,136,0.7);
+}

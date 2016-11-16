@@ -1,0 +1,13 @@
+name = Openlayers Content Types
+description = Map integration with CTools Content Types (for Panels panes)
+core = 7.x
+package = "Openlayers"
+
+dependencies[] = openlayers
+
+; Information added by Drupal.org packaging script on 2016-01-03
+version = "7.x-3.1"
+core = "7.x"
+project = "openlayers"
+datestamp = "1451782149"
+

@@ -1,0 +1,14 @@
+.ol-autozoom.ol-control {
+  top: 4em;
+  left: .5em;
+}
+
+.ol-geofield.ol-control button {
+  display: inline-block;
+}
+
+.ol-geofield.ol-control button.enable {
+  text-decoration: none;
+  background-color: #4c6079;
+  background-color: rgba(0,60,136,0.7);
+}

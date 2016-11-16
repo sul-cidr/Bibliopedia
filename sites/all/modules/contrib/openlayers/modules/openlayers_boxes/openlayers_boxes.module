@@ -1,0 +1,31 @@
+<?php
+/**
+ * @file
+ * Openlayers Boxes Integration module.
+ */
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function openlayers_boxes_ctools_plugin_api($module, $api) {
+  if ($module == 'boxes' && $api == 'plugins') {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implements hook_boxes_plugins().
+ */
+function openlayers_boxes_boxes_plugins() {
+  return array(
+    'openlayers' => array(
+      'title' => 'Openlayers map',
+      'handler' => array(
+        'parent' => 'boxes_box',
+        'class' => 'openlayers',
+        'file' => 'openlayers.php',
+        'path' => drupal_get_path('module', 'openlayers_boxes') . '/plugins/boxes',
+      ),
+    ),
+  );
+}

@@ -50,7 +50,7 @@ function workflow_token_info_alter(&$data) {
 
     // High-jack the fields (they do not have sub-tokens, yet).
     foreach ($tokens as &$token) {
-      // Caveat: the following agorithm is just a guess.
+      // Caveat: the following algorithm is just a guess.
       if (isset($token['module']) && $token['module'] == 'token') {
         if (isset($token['description']) && 0 == substr_compare($token['description'], 'Workflow', 0, 8)) {
           $token['type'] = 'WorkflowTransition';
@@ -64,13 +64,19 @@ function workflow_token_info_alter(&$data) {
 /**
  * Implements hook_token_info().
  *
- * Adds tokens and token types, from field to transition to workflow and state.
- * Using the names of the entities from Workflow module.
- * Lot of tokens are already defined via entity_properties.
+ * Adds tokens and token types, for Field, Workflow, State and Transition,
+ * using the names of the entities from Workflow module.
+ * Lots of tokens are already defined via entity_properties.
+ * D7: a dependency on entity_token exists.
  *
  * @see workflow_entity_property_info_alter()
  */
 function workflow_token_info() {
+
+  if (!module_exists('entity_token')) {
+    return array();
+  }
+
   /*
    * Token types.
    */
@@ -133,12 +139,17 @@ function workflow_token_info() {
 
 /**
  * Implements hook_tokens().
+ *
+ * N.B. Keep the following functions aligned when changing properties:
+ * - workflow_tokens()
+ * - workflow_entity_property_info_alter()
+ * - workflow_views_views_data_alter()
  */
 function workflow_tokens($type, $tokens, array $data = array(), array $options = array()) {
   $replacements = array();
 
   $sanitize = !empty($options['sanitize']);
-  $langcode = !empty($options['language']->language) ? $options['language']->language : LANGUAGE_NONE;
+  $langcode = isset($options['language']) ? $options['language']->language : NULL;
 
   // The 'node' tokens have already been replaced with 'entity'.
   // Skip for easier debugging.
@@ -290,7 +301,7 @@ function _workflow_token_get_token($wrapper, $options) {
     // When we don't need sanitized tokens decode already sanitizied texts.
     $options['decode'] = TRUE;
   }
-  $langcode = isset($options['language']) ? $options['language']->language : NULL;
+  $langcode = isset($options['language']) ? $options['language']->language : LANGUAGE_NONE;
 
   // If there is a label for a property, e.g., defined by an options list or an
   // entity label, make use of it.
@@ -331,13 +342,14 @@ function _workflow_tokens_get_transition($entity_type, $entity, $field_name) {
 
   list($entity_id, , $entity_bundle) = entity_extract_ids($entity_type, $entity);
 
+  $langcode = _workflow_metadata_workflow_get_properties($entity, array(), 'langcode', $entity_type, $field_name);
+
   if (!empty($entity_id) && !isset($entity->original)) {
     $transition = workflow_transition_load_single($entity_type, $entity_id, $field_name);
     return $transition;
   }
 
   // Get transition data from online-data.
-
   // Create dummy transitions, just to set $node->workflow_transitions[].
   foreach (_workflow_info_fields($entity, $entity_type, $entity_bundle) as $found_name => $field) {
     // If $field_name = NULL, any workflow_field/node is OK.
@@ -346,7 +358,7 @@ function _workflow_tokens_get_transition($entity_type, $entity, $field_name) {
     }
 
     $old_sid = FALSE;
-    $new_sid = $found_name ? _workflow_get_sid_by_items($entity->{$found_name}[LANGUAGE_NONE]) : $entity->workflow_sid;
+    $new_sid = $found_name ? _workflow_get_sid_by_items($entity->{$found_name}[$langcode]) : $entity->workflow_sid;
 
     if (!isset($entity_id)) {
       // Creating an entity.
@@ -365,14 +377,14 @@ function _workflow_tokens_get_transition($entity_type, $entity, $field_name) {
       }
     }
     elseif (isset($entity->original)) {
-      if ($field_name && !isset($entity->original->{$found_name}[LANGUAGE_NONE])) {
+      if ($field_name && !isset($entity->original->{$found_name}[$langcode])) {
         // When updating a node, that did not have a workflow attached before.
         // (Happens when you add workflows to existing Entity types.)
         $old_sid = workflow_node_previous_state($entity, $entity_type, $found_name);
       }
       elseif ($field_name) {
         // Updating an entity.
-        $old_sid = _workflow_get_sid_by_items($entity->original->{$found_name}[LANGUAGE_NONE]);
+        $old_sid = _workflow_get_sid_by_items($entity->original->{$found_name}[$langcode]);
       }
       else {
         $old_sid = workflow_node_previous_state($entity, $entity_type, $found_name);

@@ -52,7 +52,9 @@ class WorkflowFeaturesController extends EntityDefaultFeaturesController {
     $code[] = '';
     foreach ($data as $identifier) {
       // Clone workflow to make sure changes are not propagated to original.
-      if ($workflow = clone entity_load_single($this->type, $identifier)) {
+      if ($workflow = entity_load_single($this->type, $identifier)) {
+        // Make sure data is not copied to the database.
+        $workflow = clone $workflow;
         // Modification for the Workflow object:
         // For mapping workflow_field, add original wid in case target system
         // already contains workflows.
@@ -107,7 +109,7 @@ function workflow_features_pipe_field_base_alter(&$pipe, $data, $export) {
     foreach ($data as $field_name) {
       // $info = field_info_field($field_name);
       $field = _workflow_info_field($field_name);
-      if ($field['type'] = 'workflow') {
+      if ($field['type'] == 'workflow') {
 
         // $field['settings']['wid'] can be numeric or named.
         $workflow = workflow_load_single($field['settings']['wid']);

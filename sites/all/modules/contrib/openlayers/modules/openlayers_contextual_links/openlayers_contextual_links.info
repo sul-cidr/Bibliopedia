@@ -1,0 +1,14 @@
+name = OpenLayers Contextual Links
+description = Provide contextual links on a map.
+core = 7.x
+package = "Openlayers"
+
+dependencies[] = contextual
+dependencies[] = openlayers_ui
+
+; Information added by Drupal.org packaging script on 2015-06-25
+version = "7.x-3.0-beta3"
+core = "7.x"
+project = "openlayers"
+datestamp = "1435264090"
+

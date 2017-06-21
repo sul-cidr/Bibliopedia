@@ -37,6 +37,7 @@ class WorkflowItem extends WorkflowD7Base {// D8: extends ConfigFieldItemBase im
           'widget' => array(
             'options' => 'select',
             'name_as_title' => 1,
+            'hide' => 0,
             'schedule' => 1,
             'schedule_timezone' => 1,
             'comment' => 1,
@@ -143,6 +144,18 @@ class WorkflowItem extends WorkflowD7Base {// D8: extends ConfigFieldItemBase im
         is the best way to show them. ('Action buttons' do not work on Comment form.)"
       ),
     );
+    $element['widget']['hide'] = array(
+      '#type' => 'checkbox',
+      '#attributes' => array('class' => array('container-inline')),
+      '#title' => t('Hide the widget on Entity form.'),
+      '#default_value' => $settings['widget']['hide'],
+      '#description' => t(
+        'Using Workflow Field, the widget is always shown when editing an
+        Entity. Set this checkbox in case you only want to change the status
+        on the Workflow History tab or on the Node View. (This checkbox is
+        only needed because Drupal core does not have a <hidden> widget.)'
+      ),
+    );
     $element['widget']['name_as_title'] = array(
       '#type' => 'checkbox',
       '#attributes' => array('class' => array('container-inline')),
@@ -173,7 +186,7 @@ class WorkflowItem extends WorkflowD7Base {// D8: extends ConfigFieldItemBase im
     );
     $element['widget']['comment'] = array(
       '#type' => 'select',
-      '#title' => t('Allow adding a comment to workflow transitions.'),
+      '#title' => t('Allow adding a comment to workflow transitions'),
       '#required' => FALSE,
       '#options' => array(
         // Use 0/1/2 to stay compatible with previous checkbox.
@@ -253,7 +266,8 @@ class WorkflowItem extends WorkflowD7Base {// D8: extends ConfigFieldItemBase im
   /**
    * Implements hook_field_update() -> FieldItemInterface::update().
    *
-   * @todo: in course of time, this is not used anymore...
+   * @todo: ATM, it is not used anymore. But it should replace DefaultWidget::submit().
+   * 
    * It is called also from hook_field_insert(), since we need $nid to store {workflow_node_history}.
    * We cannot use hook_field_presave(), since $nid is not yet known at that moment.
    *
@@ -263,7 +277,6 @@ class WorkflowItem extends WorkflowD7Base {// D8: extends ConfigFieldItemBase im
    */
   public function update(&$items) {// ($entity_type, $entity, $field, $instance, $langcode, &$items) {
 
-    // @todo: apparently, in course of time, this is not used anymore. Restore or remove.
     $field_name = $this->field['field_name'];
     // $field['settings']['wid'] can be numeric or named.
     $workflow = workflow_load_single($this->field['settings']['wid']);

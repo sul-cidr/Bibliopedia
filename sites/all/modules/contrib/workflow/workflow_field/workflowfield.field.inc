@@ -81,12 +81,13 @@ function workflowfield_property_info_callback(&$info, $entity_type, $field, $ins
  * and 'workflow' may be set, but is not in the field data.
  */
 function _workflowfield_metadata_property_get($entity, array $options, $name, $entity_type, $info) {
+  $values = array();
+
   // return entity_metadata_field_property_get($entity, array $options, $name, $entity_type, $info);
   $field = field_info_field($name);
   $columns = array_keys($field['columns']);
   $langcode = isset($options['language']) ? $options['language']->language : LANGUAGE_NONE;
   $langcode = entity_metadata_field_get_language($entity_type, $entity, $field, $langcode, TRUE);
-  $values = array();
 
   if (isset($entity->{$name}[$langcode])) {
     foreach ($entity->{$name}[$langcode] as $delta => $data) {
@@ -202,6 +203,34 @@ function workflowfield_field_update($entity_type, $entity, array $field, $instan
   else {
     $widget = new WorkflowDefaultWidget($field, $instance, $entity_type, $entity);
     $widget->submit($form, $form_state, $items); // $items is a proprietary D7 parameter.
+  }
+}
+
+/**
+ * Implements hook_field_prepare_view().
+ *
+ * This hook is needed in the following case:
+ * - Edit a node with Workflow Field;
+ * - Change the value of the widget;
+ * - Click [Preview] button;
+ * See the "Notice: Undefined index: value in list_field_formatter_view() (line 467+472 of \modules\field\modules\list\list.module)."
+ * This is because in the Workflow Widget, the data is stored in a 'workflow'
+ * structure, not a 'value' value.
+ *
+ * However, it is a pity that we run this hook in every view :-(
+ */
+function workflowfield_field_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items) {
+  // I guess Preview mode is only with 1 entity at a time.
+  if (count ( $items ) !== 1) {
+    return;
+  }
+
+  foreach ($items as $id => &$item_array) {
+    foreach ($item_array as $index => &$item) {
+      if (!isset($item['value']) && isset($item['workflow']['workflow_sid'])) {
+        $item['value'] = $item['workflow']['workflow_sid'];
+      }
+    }
   }
 }
 

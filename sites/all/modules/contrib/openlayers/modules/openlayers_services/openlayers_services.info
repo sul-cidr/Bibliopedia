@@ -1,0 +1,15 @@
+name = OpenLayers Services
+description = Allows you to embed any OpenLayers map into an iframe.
+core = 7.x
+package = "Openlayers"
+
+dependencies[] = services
+dependencies[] = services_rrf
+dependencies[] = rest_server
+
+; Information added by Drupal.org packaging script on 2015-06-25
+version = "7.x-3.0-beta3"
+core = "7.x"
+project = "openlayers"
+datestamp = "1435264090"
+

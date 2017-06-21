@@ -1,0 +1,17 @@
+name = OpenLayers Geofield
+description = OpenLayers Geofield integration
+core = 7.x
+package = "Openlayers"
+
+dependencies[] = openlayers
+dependencies[] = geofield (>=7.x-2.3)
+
+registry_autoload[] = PSR-0
+registry_autoload[] = PSR-4
+
+; Information added by Drupal.org packaging script on 2015-06-25
+version = "7.x-3.0-beta3"
+core = "7.x"
+project = "openlayers"
+datestamp = "1435264090"
+

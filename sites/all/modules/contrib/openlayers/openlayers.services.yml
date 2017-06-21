@@ -1,0 +1,17 @@
+parameters:
+  annotated_plugins_auto_discovery.openlayers:
+    - { owner: 'openlayers', type: 'Component', directory: 'Plugins/Component'}
+    - { owner: 'openlayers', type: 'Control', directory: 'Plugins/Control'}
+    - { owner: 'openlayers', type: 'Interaction', directory: 'Plugins/Interaction'}
+    - { owner: 'openlayers', type: 'Layer', directory: 'Plugins/Layer'}
+    - { owner: 'openlayers', type: 'Map', directory: 'Plugins/Map'}
+    - { owner: 'openlayers', type: 'Source', directory: 'Plugins/Source'}
+    - { owner: 'openlayers', type: 'Style', directory: 'Plugins/Style'}
+    - { owner: 'openlayers', type: 'Types', directory: 'Types'}
+
+services:
+  openlayers:
+    class: \Drupal\service_container\Plugin\ContainerAwarePluginManager
+    arguments: ['openlayers.internal.']
+    calls:
+      - [ setContainer, [ '@service_container' ] ]
